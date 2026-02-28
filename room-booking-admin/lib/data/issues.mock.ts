@@ -1,0 +1,48 @@
+import type { Issue } from "@/lib/types/issue";
+
+export const issuesMock: Issue[] = [
+  {
+    id: "issue-1",
+    roomId: "room-1",
+    title: "Projector color distortion",
+    description: "Projector output has a strong green tint.",
+    severity: "MEDIUM",
+    status: "OPEN",
+    reportedBy: "A. Lecturer",
+    reportedAt: "2026-02-20T08:15:00.000Z",
+    assignedTo: "Maintenance Team A",
+  },
+  {
+    id: "issue-2",
+    roomId: "room-2",
+    title: "Air conditioning not cooling",
+    description: "Room temperature is high during afternoon sessions.",
+    severity: "HIGH",
+    status: "IN_PROGRESS",
+    reportedBy: "Lab Instructor",
+    reportedAt: "2026-02-18T12:00:00.000Z",
+    assignedTo: "Facilities Unit",
+  },
+  {
+    id: "issue-3",
+    roomId: "room-4",
+    title: "Broken chair set",
+    description: "Several seats in row 3 are damaged.",
+    severity: "LOW",
+    status: "RESOLVED",
+    reportedBy: "Student Affairs",
+    reportedAt: "2026-02-10T10:45:00.000Z",
+    resolvedAt: "2026-02-12T13:30:00.000Z",
+    resolutionNote: "Seats replaced",
+  },
+  {
+    id: "issue-4",
+    roomId: "room-5",
+    title: "Chemical cabinet lock failure",
+    description: "Safety cabinet cannot be secured.",
+    severity: "CRITICAL",
+    status: "OPEN",
+    reportedBy: "Lab Technician",
+    reportedAt: "2026-02-27T07:20:00.000Z",
+  },
+];
