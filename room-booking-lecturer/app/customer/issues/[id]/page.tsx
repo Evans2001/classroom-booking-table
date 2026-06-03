@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ChevronLeft, AlertCircle, Image as ImageIcon, MapPin, Clock, MessageSquare } from "lucide-react";
 
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { getIssueById } from "@/lib/services/issues.service";
 import type { Issue } from "@/lib/types/issue";
 import { formatDateTime } from "@/lib/utils/format";
@@ -26,7 +27,13 @@ export default function IssueDetailPage() {
     void loadData();
   }, [params.id]);
 
-  if (loading) return <p className="text-sm text-slate-500">Loading issue...</p>;
+  if (loading) return (
+    <div className="animate-pulse space-y-4 pt-4">
+      <div className="h-48 rounded-3xl bg-slate-200" />
+      <div className="h-64 rounded-3xl bg-slate-200" />
+    </div>
+  );
+
   if (!issue) {
     return (
       <EmptyState
@@ -41,49 +48,102 @@ export default function IssueDetailPage() {
     );
   }
 
-  return (
-    <div className="space-y-3">
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <CardTitle>{issue.title}</CardTitle>
-              <CardDescription>{issue.roomName}</CardDescription>
-            </div>
-            <StatusBadge status={issue.status} />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-slate-600">
-          <p>{issue.description}</p>
-          <div className="flex items-center justify-between">
-            <StatusBadge status={issue.severity} />
-            <p className="text-xs text-slate-500">{formatDateTime(issue.createdAt)}</p>
-          </div>
-          {issue.imageUrl ? (
-            <a href={issue.imageUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-700">
-              Open attached image
-            </a>
-          ) : null}
-        </CardContent>
-      </Card>
+  const isResolved = issue.status === "RESOLVED";
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Status Timeline</CardTitle>
-          <CardDescription>Latest updates from the admin team.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {issue.updates.map((update, index) => (
-            <div key={`${update.at}-${index}`} className="rounded-md border border-slate-200 p-3">
-              <div className="mb-1 flex items-center justify-between">
-                <StatusBadge status={update.status} />
-                <p className="text-xs text-slate-500">{formatDateTime(update.at)}</p>
+  return (
+    <div className="space-y-6 pb-24">
+      {/* Top Action Bar */}
+      <Link href="/customer/issues" className="inline-flex items-center text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors">
+        <ChevronLeft className="mr-1 h-4 w-4" /> Back to Issues
+      </Link>
+
+      {/* Hero Issue Card */}
+      <div className={`relative overflow-hidden rounded-3xl bg-white shadow-xl shadow-slate-200/50 border border-slate-100 ${isResolved ? "ring-1 ring-emerald-500/20" : "ring-1 ring-action-danger/20"}`}>
+        <div className={`absolute inset-x-0 top-0 h-2 ${isResolved ? "bg-emerald-500" : "bg-action-danger"}`} />
+        
+        <div className="p-6 pt-8 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h1 className="text-xl font-black tracking-tight text-slate-900 leading-tight mb-2">{issue.title}</h1>
+              <div className="flex items-center gap-2">
+                <StatusBadge status={issue.status} />
+                <StatusBadge status={issue.severity} />
               </div>
-              <p className="text-sm text-slate-700">{update.note}</p>
             </div>
-          ))}
-        </CardContent>
-      </Card>
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${isResolved ? "bg-emerald-50 text-emerald-600" : "bg-action-danger/10 text-action-danger"}`}>
+              <AlertCircle className="h-6 w-6" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 rounded-xl bg-slate-50 p-4 border border-slate-100">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <MapPin className="h-4 w-4 shrink-0 text-slate-400" />
+              <span className="font-semibold text-slate-900">{issue.roomName}</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Clock className="h-4 w-4 shrink-0 text-slate-400" />
+              <span>Reported {formatDateTime(issue.createdAt)}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Description</h3>
+            <p className="text-sm font-medium leading-relaxed text-slate-700 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
+              {issue.description}
+            </p>
+          </div>
+
+          {issue.imageUrl && (
+            <div className="pt-2">
+              <a 
+                href={issue.imageUrl} 
+                target="_blank" 
+                rel="noreferrer" 
+                className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-200 bg-slate-50 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <ImageIcon className="h-4 w-4 text-slate-500" />
+                View Attached Image
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Timeline Section */}
+      <div>
+        <h3 className="mb-4 text-sm font-bold uppercase tracking-wider text-slate-500">Update Timeline</h3>
+        <div className="rounded-3xl bg-white p-6 shadow-xl shadow-slate-200/50 border border-slate-100 relative">
+          {/* Vertical connecting line */}
+          <div className="absolute left-[39px] top-8 bottom-8 w-px bg-slate-200" />
+          
+          <div className="space-y-6">
+            {issue.updates.map((update, index) => (
+              <div key={`${update.at}-${index}`} className="relative flex items-start gap-4">
+                <div className="relative z-10 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white border-[3px] border-brand-primary mt-1 shadow-sm" />
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <StatusBadge status={update.status} />
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{formatDateTime(update.at)}</p>
+                  </div>
+                  <div className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700 border border-slate-100">
+                    <MessageSquare className="h-4 w-4 shrink-0 text-slate-400 mt-0.5" />
+                    <p className="font-medium leading-relaxed">{update.note}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+            
+            {/* Original Report Node */}
+            <div className="relative flex items-start gap-4">
+              <div className="relative z-10 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-300 border-[3px] border-white mt-1 shadow-sm" />
+              <div className="flex-1">
+                <p className="text-sm font-bold text-slate-500">Issue Reported</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">{formatDateTime(issue.createdAt)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

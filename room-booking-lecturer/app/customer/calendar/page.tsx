@@ -1,16 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 
 export default function CalendarPage() {
-  const [days, setDays] = useState<{ label: string; date: Date; isToday: boolean }[]>([]);
-
-  useEffect(() => {
+  const [days] = useState<{ label: string; date: Date; isToday: boolean }[]>(() => {
     // Generate dates starting from today for the next 7 days
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize to start of day
 
-    const next7Days = Array.from({ length: 7 }, (_, i) => {
+    return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
       return {
@@ -19,8 +17,7 @@ export default function CalendarPage() {
         isToday: i === 0,
       };
     });
-    setDays(next7Days);
-  }, []);
+  });
 
   // 14 columns: Hours from 8:30 to 22:30 (10:30 PM)
   const timeSlots = Array.from({ length: 14 }, (_, i) => {
