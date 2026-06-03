@@ -36,12 +36,15 @@ export function CustomerTopbar() {
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex h-14 w-full max-w-md items-center justify-between px-4">
-        <h1 className="text-sm font-semibold text-slate-900">{title}</h1>
-        <Button size="sm" variant="ghost" onClick={logout}>
+    <header className="sticky top-0 z-30 bg-gradient-to-r from-brand-primary to-[#7a393e] shadow-lg shadow-brand-primary/10">
+      <div className="mx-auto flex h-16 w-full max-w-md items-center justify-between px-4">
+        <h1 className="text-lg font-bold tracking-tight text-white drop-shadow-sm">{title}</h1>
+        <button 
+          onClick={logout}
+          className="rounded-xl px-3 py-1.5 text-xs font-semibold text-white/90 backdrop-blur-sm transition-all hover:bg-white/20 hover:text-white active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20"
+        >
           Logout
-        </Button>
+        </button>
       </div>
     </header>
   );

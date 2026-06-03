@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Building2, MapPin, CalendarClock, Users, FileText, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +38,7 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
   });
   const [submitting, setSubmitting] = useState(false);
   const [availabilityState, setAvailabilityState] = useState<AvailabilityState>("idle");
-  const [availabilityMessage, setAvailabilityMessage] = useState("Choose date/time to check room.");
+  const [availabilityMessage, setAvailabilityMessage] = useState("Choose date & time to verify.");
 
   const minStartAt = useMemo(() => getMinBookingDateTimeInputValue(), []);
 
@@ -59,13 +60,13 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
   useEffect(() => {
     if (!form.roomId || !form.startAt || !form.endAt) {
       setAvailabilityState("idle");
-      setAvailabilityMessage("Choose date/time to check room.");
+      setAvailabilityMessage("Choose date & time to verify.");
       return;
     }
 
     let active = true;
     setAvailabilityState("checking");
-    setAvailabilityMessage("Checking room availability...");
+    setAvailabilityMessage("Checking room schedule...");
 
     const timer = setTimeout(async () => {
       const result = await checkRoomAvailability({
@@ -76,7 +77,7 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
       if (!active) return;
       setAvailabilityState(result.available ? "available" : "unavailable");
       setAvailabilityMessage(result.message);
-    }, 250);
+    }, 400);
 
     return () => {
       active = false;
@@ -98,68 +99,133 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
   };
 
   return (
-    <form className="space-y-3" onSubmit={submit}>
-      <Select
-        value={building}
-        onChange={(event) => setBuilding(event.target.value)}
-        options={buildings.map((item) => ({ value: item, label: item }))}
-      />
-      <Select
-        value={form.roomId}
-        onChange={(event) => setForm((previous) => ({ ...previous, roomId: event.target.value }))}
-        options={filteredRooms.map((room) => ({
-          value: room.id,
-          label: `${room.code} - ${room.name}`,
-        }))}
-      />
-      <div className="grid grid-cols-1 gap-2">
-        <Input
-          type="datetime-local"
-          required
-          min={minStartAt}
-          value={form.startAt}
-          onChange={(event) => setForm((previous) => ({ ...previous, startAt: event.target.value }))}
-        />
-        <Input
-          type="datetime-local"
-          required
-          min={form.startAt || minStartAt}
-          value={form.endAt}
-          onChange={(event) => setForm((previous) => ({ ...previous, endAt: event.target.value }))}
-        />
+    <form className="space-y-5" onSubmit={submit}>
+      
+      {/* Location Section */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
+          <Building2 className="h-4 w-4" /> Location
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Select
+            value={building}
+            onChange={(event) => setBuilding(event.target.value)}
+            options={buildings.map((item) => ({ value: item, label: item }))}
+            className="bg-slate-50"
+          />
+          <Select
+            value={form.roomId}
+            onChange={(event) => setForm((previous) => ({ ...previous, roomId: event.target.value }))}
+            options={filteredRooms.map((room) => ({
+              value: room.id,
+              label: `${room.code} - ${room.name}`,
+            }))}
+            className="bg-slate-50 font-medium"
+          />
+        </div>
       </div>
-      <Input
-        type="number"
-        min={1}
-        required
-        value={form.attendees}
-        onChange={(event) =>
-          setForm((previous) => ({ ...previous, attendees: Number(event.target.value) }))
-        }
-        placeholder="Attendees"
-      />
-      <Textarea
-        required
-        value={form.purpose}
-        onChange={(event) => setForm((previous) => ({ ...previous, purpose: event.target.value }))}
-        placeholder="Purpose of booking"
-      />
 
+      {/* Date & Time Section */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
+          <CalendarClock className="h-4 w-4" /> Date & Time
+        </div>
+        <div className="grid grid-cols-1 gap-3">
+          <div className="relative">
+            <label className="absolute left-3 top-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Start Time</label>
+            <Input
+              type="datetime-local"
+              required
+              min={minStartAt}
+              value={form.startAt}
+              onChange={(event) => setForm((previous) => ({ ...previous, startAt: event.target.value }))}
+              className="pt-6 pb-2 h-14 bg-slate-50 text-sm font-bold"
+            />
+          </div>
+          <div className="relative">
+            <label className="absolute left-3 top-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">End Time</label>
+            <Input
+              type="datetime-local"
+              required
+              min={form.startAt || minStartAt}
+              value={form.endAt}
+              onChange={(event) => setForm((previous) => ({ ...previous, endAt: event.target.value }))}
+              className="pt-6 pb-2 h-14 bg-slate-50 text-sm font-bold"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Availability Status Box */}
       <div
-        className={`rounded-md border px-3 py-2 text-xs ${
+        className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
           availabilityState === "available"
-            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
             : availabilityState === "unavailable"
-              ? "border-rose-200 bg-rose-50 text-rose-700"
-              : "border-slate-200 bg-slate-50 text-slate-600"
+              ? "border-rose-200 bg-rose-50 text-rose-800"
+              : availabilityState === "checking"
+                ? "border-blue-200 bg-blue-50 text-blue-800"
+                : "border-slate-200 bg-slate-50 text-slate-600"
         }`}
       >
-        {availabilityMessage}
+        <div className="mt-0.5 shrink-0">
+          {availabilityState === "available" && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+          {availabilityState === "unavailable" && <AlertCircle className="h-5 w-5 text-rose-600" />}
+          {availabilityState === "checking" && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}
+          {availabilityState === "idle" && <MapPin className="h-5 w-5 text-slate-400" />}
+        </div>
+        <div>
+          <h4 className="text-sm font-bold leading-none mb-1">
+            {availabilityState === "available" ? "Room Available" : 
+             availabilityState === "unavailable" ? "Unavailable" : 
+             availabilityState === "checking" ? "Verifying..." : "Check Availability"}
+          </h4>
+          <p className="text-xs font-medium opacity-90">{availabilityMessage}</p>
+        </div>
       </div>
 
-      <Button type="submit" disabled={submitting || availabilityState !== "available"} className="w-full">
-        {submitting ? "Submitting..." : "Submit Request"}
-      </Button>
+      {/* Details Section */}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
+          <FileText className="h-4 w-4" /> Details
+        </div>
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+            <Users className="h-4 w-4 text-slate-400" />
+          </div>
+          <Input
+            type="number"
+            min={1}
+            required
+            value={form.attendees}
+            onChange={(event) =>
+              setForm((previous) => ({ ...previous, attendees: Number(event.target.value) }))
+            }
+            placeholder="Number of Attendees"
+            className="pl-10 h-12 bg-slate-50"
+          />
+        </div>
+        <Textarea
+          required
+          value={form.purpose}
+          onChange={(event) => setForm((previous) => ({ ...previous, purpose: event.target.value }))}
+          placeholder="What is the purpose of this booking?"
+          className="bg-slate-50 border-slate-200 min-h-[100px]"
+        />
+      </div>
+
+      {/* Sticky Submit Button */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 p-4 pb-6 backdrop-blur-md border-t border-slate-100 sm:static sm:bg-transparent sm:p-0 sm:border-none sm:backdrop-blur-none sm:mt-6">
+        <div className="mx-auto max-w-md">
+          <Button 
+            type="submit" 
+            disabled={submitting || availabilityState !== "available"} 
+            className="w-full h-14 rounded-xl shadow-lg shadow-brand-primary/20 text-base"
+          >
+            {submitting ? "Submitting Request..." : "Submit Booking Request"}
+          </Button>
+        </div>
+      </div>
     </form>
   );
 }

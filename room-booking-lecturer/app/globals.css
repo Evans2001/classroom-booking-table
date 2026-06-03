@@ -1,13 +1,61 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+  /* Brand Colors */
+  --brand-primary: #5c2c30;   /* The deep maroon/burgundy used for the sidebar and primary buttons */
+  --brand-accent: #eab308;    /* The yellow/gold used for the active menu item */
+
+  /* Backgrounds */
+  --bg-app: #f8fafc;          /* The slightly off-white background of the main content area */
+  --bg-card: #ffffff;         /* Pure white used for the dashboard cards and table backgrounds */
+  --bg-input: #ffffff;        /* White background for search bars and dropdowns */
+
+  /* Typography */
+  --text-primary: #111827;    /* Very dark slate/black for main headings (e.g., "Rooms", "Dashboard") */
+  --text-secondary: #6b7280;  /* Grey for subtitles, table headers, and secondary info */
+  --text-sidebar: #d1d5db;    /* Light grey for inactive sidebar links */
+  --text-sidebar-active: #000000; /* Dark text on the yellow active sidebar pill */
+
+  /* Status Badges */
+  --status-active-bg: #d1fae5;
+  --status-active-text: #065f46;
+  
+  --status-inactive-bg: #f3f4f6;
+  --status-inactive-text: #374151;
+  
+  --status-maintenance-bg: #fef3c7;
+  --status-maintenance-text: #92400e;
+
+  /* Actions */
+  --action-danger: #dc2626;   /* Red used for the "Delete" action text */
+  --action-neutral: #5c2c30;  /* Maroon used for the "View" action text */
+  --border-subtle: #e5e7eb;   /* Light grey used for card borders and input fields */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-accent: var(--brand-accent);
+  
+  --color-bg-app: var(--bg-app);
+  --color-bg-card: var(--bg-card);
+  --color-bg-input: var(--bg-input);
+  
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-sidebar: var(--text-sidebar);
+  --color-text-sidebar-active: var(--text-sidebar-active);
+
+  --color-status-active-bg: var(--status-active-bg);
+  --color-status-active-text: var(--status-active-text);
+  --color-status-inactive-bg: var(--status-inactive-bg);
+  --color-status-inactive-text: var(--status-inactive-text);
+  --color-status-maintenance-bg: var(--status-maintenance-bg);
+  --color-status-maintenance-text: var(--status-maintenance-text);
+
+  --color-action-danger: var(--action-danger);
+  --color-action-neutral: var(--action-neutral);
+  --color-border-subtle: var(--border-subtle);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -17,7 +65,7 @@
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--bg-app);
+  color: var(--text-primary);
   font-family: var(--font-geist-sans), sans-serif;
 }

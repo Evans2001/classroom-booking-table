@@ -36,7 +36,7 @@ export function StatusBadge({ status }: { status: StatusLike }) {
   }
 
   return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${classes}`}>
+    <span className={`inline-flex items-center justify-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-sm ${classes}`}>
       {resolveLabel(status)}
     </span>
   );
