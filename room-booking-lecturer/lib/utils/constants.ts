@@ -13,6 +13,7 @@ export const MOBILE_NAV_ITEMS = [
   { href: "/customer/dashboard", label: "Home" },
   { href: "/customer/rooms", label: "Rooms" },
   { href: "/customer/bookings", label: "Bookings" },
+  { href: "/customer/calendar", label: "Calendar" },
   { href: "/customer/issues", label: "Issues" },
   { href: "/customer/profile", label: "Profile" },
 ] as const;
