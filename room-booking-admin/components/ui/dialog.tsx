@@ -29,7 +29,7 @@ export function Dialog({ open, onClose, title, description, children }: DialogPr
           <button
             type="button"
             onClick={onClose}
-            className="text-sm font-medium text-slate-600 hover:text-slate-900"
+            className="text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 px-3 py-1.5 rounded-md transition-colors"
           >
             Close
           </button>

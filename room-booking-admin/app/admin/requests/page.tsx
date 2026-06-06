@@ -36,7 +36,7 @@ export default function RequestsPage() {
     };
   }, [search, status]);
 
-  const columns = useMemo<DataColumn<BookingRequest>[]>(
+    const columns = useMemo<DataColumn<BookingRequest>[]>(
     () => [
       ...requestsColumns,
       {
@@ -44,11 +44,14 @@ export default function RequestsPage() {
         header: "Actions",
         render: (request) =>
           request.status === "PENDING" ? (
-            <Button size="sm" onClick={() => setSelected(request)}>
+            <button 
+              onClick={() => setSelected(request)}
+              className="bg-white border border-[#5E2726] text-[#5E2726] hover:bg-[#5E2726] hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+            >
               Review
-            </Button>
+            </button>
           ) : (
-            <span className="text-xs text-slate-500">Reviewed</span>
+            <span className="text-slate-400 text-sm italic">Reviewed</span>
           ),
       },
     ],
@@ -75,6 +78,7 @@ export default function RequestsPage() {
           placeholder="Search requester, department, purpose..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
+          className="border-slate-200 shadow-sm py-2.5 px-4"
         />
         <Select
           value={status}
@@ -86,6 +90,7 @@ export default function RequestsPage() {
             { label: REQUEST_STATUS_LABELS.REJECTED, value: "REJECTED" },
             { label: REQUEST_STATUS_LABELS.CANCELLED, value: "CANCELLED" },
           ]}
+          className="border-slate-200 shadow-sm py-2.5 px-4"
         />
       </div>
 

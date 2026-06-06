@@ -9,12 +9,12 @@ export function PageShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="min-h-screen bg-background">
       <div className="flex min-h-screen">
         <AdminSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
         <div className="flex min-h-screen flex-1 flex-col">
           <AdminTopbar onMenuClick={() => setMobileOpen((prev) => !prev)} />
-          <main className="flex-1 p-4 md:p-6">{children}</main>
+          <main className="flex-1 p-6 md:p-8 flex flex-col gap-6">{children}</main>
         </div>
       </div>
     </div>

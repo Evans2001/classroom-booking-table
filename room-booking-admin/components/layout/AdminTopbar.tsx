@@ -30,17 +30,17 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
   };
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="flex h-16 items-center justify-between gap-3 px-4 md:px-6">
-        <div className="flex items-center gap-2">
+    <header className="sticky top-0 z-30 bg-white/95 shadow-sm backdrop-blur">
+      <div className="flex h-20 items-center justify-between gap-4 px-6 md:px-8">
+        <div className="flex items-center gap-4">
           <Button variant="ghost" className="md:hidden" onClick={onMenuClick}>
             Menu
           </Button>
-          <h1 className="text-lg font-semibold text-slate-900">{pageTitle}</h1>
+          <h1 className="text-2xl font-bold text-brand-maroon tracking-tight">{pageTitle}</h1>
         </div>
-        <Button variant="outline" onClick={handleLogout}>
+        <button className="bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 rounded-xl px-4 py-2 text-sm font-semibold transition-all shadow-sm" onClick={handleLogout}>
           Logout
-        </Button>
+        </button>
       </div>
     </header>
   );

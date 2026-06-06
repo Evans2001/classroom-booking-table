@@ -73,6 +73,15 @@ export async function updateRoom(id: string, patch: UpdateRoomInput): Promise<Ro
   return updated;
 }
 
+export async function deleteRoom(id: string): Promise<void> {
+  await delay();
+  const index = roomsData.findIndex((room) => room.id === id);
+  if (index === -1) {
+    throw new Error("Room not found");
+  }
+  roomsData.splice(index, 1);
+}
+
 export function __resetRoomsService(): void {
   roomsData = [...roomsMock];
 }
