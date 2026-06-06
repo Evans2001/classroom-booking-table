@@ -29,7 +29,9 @@ export function DataTable<TData>({ columns, data, rowKey }: DataTableProps<TData
           <TableHeader>
             <TableRow>
               {columns.map((column) => (
-                <TableHead key={column.key}>{column.header}</TableHead>
+                <TableHead key={column.key} className="text-xs font-bold tracking-wider text-slate-500 uppercase bg-slate-50/80 py-4">
+                  {column.header}
+                </TableHead>
               ))}
             </TableRow>
           </TableHeader>
