@@ -1,25 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f1f5f9;
-  --foreground: #0f172a;
+  --background: #f8fafc; /* slate-50 */
+  --foreground: #1e293b; /* slate-800 */
   --muted: #64748b;
   --card: #ffffff;
   --card-border: #e2e8f0;
 }
 
 @theme inline {
+  --color-brand-maroon: #5E2726;
+  --color-brand-maroon-hover: #753331;
+  --color-brand-gold: #F3C033;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-card: var(--card);
   --color-card-border: var(--card-border);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), sans-serif;
+  font-family: var(--font-inter), sans-serif;
 }

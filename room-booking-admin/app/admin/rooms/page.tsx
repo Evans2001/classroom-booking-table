@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
+import { useToast } from "@/components/common/ToastProvider";
 import { DataTable, type DataColumn } from "@/components/tables/DataTable";
 import { roomsColumns } from "@/components/tables/columns/rooms.columns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { listRooms } from "@/lib/services/rooms.service";
+import { deleteRoom, listRooms } from "@/lib/services/rooms.service";
 import type { Room, RoomStatus, RoomType } from "@/lib/types/room";
 import { ROOM_STATUS_LABELS, ROOM_TYPE_LABELS } from "@/lib/utils/constants";
 
@@ -19,6 +21,10 @@ export default function RoomsPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<RoomStatus | "ALL">("ALL");
   const [type, setType] = useState<RoomType | "ALL">("ALL");
+  
+  const [roomToDelete, setRoomToDelete] = useState<Room | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { showToast } = useToast();
 
   useEffect(() => {
     async function loadRooms() {
@@ -30,6 +36,21 @@ export default function RoomsPage() {
     void loadRooms();
   }, [search, status, type]);
 
+  const handleDelete = async () => {
+    if (!roomToDelete) return;
+    try {
+      setIsDeleting(true);
+      await deleteRoom(roomToDelete.id);
+      setRooms((prev) => prev.filter((r) => r.id !== roomToDelete.id));
+      showToast("Room deleted successfully.", undefined, "success");
+    } catch {
+      showToast("Failed to delete room.", undefined, "error");
+    } finally {
+      setIsDeleting(false);
+      setRoomToDelete(null);
+    }
+  };
+
   const columns = useMemo<DataColumn<Room>[]>(
     () => [
       ...roomsColumns,
@@ -37,9 +58,17 @@ export default function RoomsPage() {
         key: "actions",
         header: "Actions",
         render: (room) => (
-          <Link href={`/admin/rooms/${room.id}`} className="text-sm font-medium text-blue-700 hover:underline">
-            View
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link href={`/admin/rooms/${room.id}`} className="text-sm font-medium text-blue-700 hover:underline">
+              View
+            </Link>
+            <button
+              onClick={() => setRoomToDelete(room)}
+              className="px-3 py-1.5 text-sm font-medium text-red-600 transition-colors rounded-lg hover:bg-red-50 hover:text-red-700"
+            >
+              Delete
+            </button>
+          </div>
         ),
       },
     ],
@@ -96,6 +125,15 @@ export default function RoomsPage() {
           }
         />
       )}
+
+      <ConfirmDialog
+        open={!!roomToDelete}
+        title="Delete Room"
+        description="Are you sure you want to delete this room? This action cannot be undone."
+        confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+        onConfirm={handleDelete}
+        onCancel={() => setRoomToDelete(null)}
+      />
     </div>
   );
 }
