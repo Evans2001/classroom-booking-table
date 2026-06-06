@@ -38,9 +38,9 @@ export function AdminTopbar({ onMenuClick }: AdminTopbarProps) {
           </Button>
           <h1 className="text-2xl font-bold text-brand-maroon tracking-tight">{pageTitle}</h1>
         </div>
-        <button className="bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 hover:text-red-600 hover:border-red-200 rounded-xl px-4 py-2 text-sm font-semibold transition-all shadow-sm" onClick={handleLogout}>
+        <Button variant="outline" className="border-slate-200 hover:bg-slate-50 hover:text-brand-maroon" onClick={handleLogout}>
           Logout
-        </button>
+        </Button>
       </div>
     </header>
   );
