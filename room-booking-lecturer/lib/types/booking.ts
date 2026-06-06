@@ -7,6 +7,7 @@ export interface Booking {
   roomName: string;
   building: string;
   roomCode: string;
+  moduleName: string;
   startAt: string;
   endAt: string;
   purpose: string;
@@ -18,6 +19,7 @@ export interface Booking {
 
 export interface BookingInput {
   roomId: string;
+  moduleName: string;
   startAt: string;
   endAt: string;
   purpose: string;

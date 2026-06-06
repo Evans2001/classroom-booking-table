@@ -31,6 +31,7 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
   const [building, setBuilding] = useState(initialRoom?.building ?? buildings[0] ?? "");
   const [form, setForm] = useState<BookingInput>({
     roomId: initialRoom?.id ?? "",
+    moduleName: "",
     startAt: "",
     endAt: "",
     purpose: "",
@@ -189,6 +190,13 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
         <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
           <FileText className="h-4 w-4" /> Details
         </div>
+        <Input
+          required
+          value={form.moduleName}
+          onChange={(event) => setForm((previous) => ({ ...previous, moduleName: event.target.value }))}
+          placeholder="Module name"
+          className="h-12 bg-slate-50"
+        />
         <div className="relative">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
             <Users className="h-4 w-4 text-slate-400" />

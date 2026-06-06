@@ -108,6 +108,7 @@ export async function createBookingRequest(input: BookingInput): Promise<Booking
     roomName: room.name,
     building: room.building,
     roomCode: room.code,
+    moduleName: input.moduleName,
     startAt: new Date(input.startAt).toISOString(),
     endAt: new Date(input.endAt).toISOString(),
     purpose: input.purpose,
