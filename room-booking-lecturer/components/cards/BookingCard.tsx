@@ -1,4 +1,4 @@
-import { CalendarDays, Clock, MapPin, Users, FileText } from "lucide-react";
+import { Clock, MapPin, Users, FileText, BookOpen } from "lucide-react";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Card } from "@/components/ui/card";
@@ -44,6 +44,10 @@ export function BookingCard({ booking }: { booking: Booking }) {
               <span className="font-semibold text-slate-700">
                 {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
+            </div>
+            <div className="flex items-center gap-2 text-slate-600">
+              <BookOpen className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span className="font-semibold text-slate-700">{booking.moduleName}</span>
             </div>
             <div className="flex items-center gap-2 text-slate-600">
               <Users className="h-3.5 w-3.5 shrink-0 text-slate-400" />

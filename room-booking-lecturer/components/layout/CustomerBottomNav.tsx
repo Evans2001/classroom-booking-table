@@ -10,7 +10,7 @@ export function CustomerBottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-100 bg-white pb-safe shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)]">
-      <div className="mx-auto grid h-16 w-full max-w-md grid-cols-5 px-2">
+      <div className="mx-auto grid h-16 w-full max-w-md grid-cols-6 px-1">
         {MOBILE_NAV_ITEMS.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
