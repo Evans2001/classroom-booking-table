@@ -31,17 +31,29 @@ export function AdminSidebar({ mobileOpen = false, onClose }: AdminSidebarProps)
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <div className="mb-8 flex flex-col items-center justify-center space-y-5 rounded-xl bg-white/5 p-4 py-6">
-          <div className="flex flex-col items-center gap-4">
-            <div className="bg-white p-2 rounded-full h-16 w-16 flex items-center justify-center shadow-md overflow-hidden">
-              <img src="/globe.svg" alt="University Logo Placeholder" className="h-full w-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerText = 'UoR'; }} />
+        <div className="mb-8 flex flex-col items-center justify-center space-y-4 rounded-xl bg-white/5 p-4 py-6">
+          <div className="flex items-center justify-center gap-3">
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-md">
+              <Image
+                src="/mylogo.png"
+                alt="University of Ruhuna"
+                width={160}
+                height={190}
+                className="h-full w-auto scale-[2.35] object-contain"
+              />
             </div>
-            <div className="bg-white p-2 rounded-full h-12 w-12 flex items-center justify-center shadow-md overflow-hidden">
-              <img src="/faculty-logo.svg" alt="Faculty Logo Placeholder" className="h-full w-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement!.innerText = 'FoE'; }} />
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-md">
+              <Image
+                src="/faculty-logo.svg"
+                alt="Faculty of Engineering"
+                width={155}
+                height={200}
+                className="h-full w-auto object-contain"
+              />
             </div>
           </div>
-          <h2 className="text-center text-sm font-bold uppercase tracking-wide text-white">
-            Faculty of Engineering
+          <h2 className="text-center text-xs font-bold uppercase leading-5 tracking-wide text-white">
+            Faculty of Engineering Lecture Room Booking System
           </h2>
         </div>
         <nav className="space-y-2">
