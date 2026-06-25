@@ -17,25 +17,49 @@ import type { Room } from "@/lib/types/room";
 interface BookingRequestFormProps {
   rooms: Room[];
   defaultRoomId?: string;
+  initialValues?: BookingInput;
+  availabilityExcludeBookingId?: string;
+  submitLabel?: string;
   onSubmit: (value: BookingInput) => Promise<void> | void;
 }
 
 type AvailabilityState = "idle" | "checking" | "available" | "unavailable";
 
-export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRequestFormProps) {
+function toDateTimeLocal(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+export function BookingRequestForm({
+  rooms,
+  defaultRoomId,
+  initialValues,
+  availabilityExcludeBookingId,
+  submitLabel = "Submit Booking Request",
+  onSubmit,
+}: BookingRequestFormProps) {
   const buildings = useMemo(
     () => Array.from(new Set(rooms.map((room) => room.building))).sort(),
     [rooms],
   );
-  const initialRoom = rooms.find((room) => room.id === defaultRoomId) ?? rooms[0];
+  const initialRoom = rooms.find((room) => room.id === (initialValues?.roomId ?? defaultRoomId)) ?? rooms[0];
   const [building, setBuilding] = useState(initialRoom?.building ?? buildings[0] ?? "");
   const [form, setForm] = useState<BookingInput>({
-    roomId: initialRoom?.id ?? "",
-    moduleName: "",
-    startAt: "",
-    endAt: "",
-    purpose: "",
-    attendees: 1,
+    roomId: initialValues?.roomId ?? initialRoom?.id ?? "",
+    moduleName: initialValues?.moduleName ?? "",
+    startAt: initialValues?.startAt ? toDateTimeLocal(initialValues.startAt) : "",
+    endAt: initialValues?.endAt ? toDateTimeLocal(initialValues.endAt) : "",
+    purpose: initialValues?.purpose ?? "",
+    attendees: initialValues?.attendees ?? 1,
   });
   const [submitting, setSubmitting] = useState(false);
   const [availabilityState, setAvailabilityState] = useState<AvailabilityState>("idle");
@@ -74,6 +98,7 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
         roomId: form.roomId,
         startAt: form.startAt,
         endAt: form.endAt,
+        excludeBookingId: availabilityExcludeBookingId,
       });
       if (!active) return;
       setAvailabilityState(result.available ? "available" : "unavailable");
@@ -84,7 +109,7 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
       active = false;
       clearTimeout(timer);
     };
-  }, [form.roomId, form.startAt, form.endAt]);
+  }, [availabilityExcludeBookingId, form.roomId, form.startAt, form.endAt]);
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -230,7 +255,7 @@ export function BookingRequestForm({ rooms, defaultRoomId, onSubmit }: BookingRe
             disabled={submitting || availabilityState !== "available"} 
             className="w-full h-14 rounded-xl shadow-lg shadow-brand-primary/20 text-base"
           >
-            {submitting ? "Submitting Request..." : "Submit Booking Request"}
+            {submitting ? "Saving..." : submitLabel}
           </Button>
         </div>
       </div>

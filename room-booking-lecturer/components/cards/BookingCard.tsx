@@ -1,38 +1,58 @@
-import { Clock, MapPin, Users, FileText, BookOpen } from "lucide-react";
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { BookOpen, Clock, FileText, MapPin, Pencil, Trash2, Users } from "lucide-react";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { Booking } from "@/lib/types/booking";
 
-export function BookingCard({ booking }: { booking: Booking }) {
+interface BookingCardProps {
+  booking: Booking;
+  onDelete?: (booking: Booking) => Promise<void> | void;
+}
+
+export function BookingCard({ booking, onDelete }: BookingCardProps) {
+  const [deleting, setDeleting] = useState(false);
   const start = new Date(booking.startAt);
   const end = new Date(booking.endAt);
   const submitted = new Date(booking.submittedAt);
 
+  const handleDelete = async () => {
+    if (!onDelete) return;
+    const confirmed = window.confirm("Remove this booking?");
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await onDelete(booking);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <Card className="group overflow-hidden p-0 transition-all hover:shadow-xl hover:shadow-brand-primary/5 hover:border-brand-primary/20">
       <div className="flex">
-        {/* Left Calendar Block */}
         <div className="flex w-20 shrink-0 flex-col items-center justify-center border-r border-slate-100 bg-slate-50/50 p-2 text-center group-hover:bg-brand-primary/5 transition-colors">
           <span className="text-[10px] font-bold uppercase tracking-widest text-brand-primary">
-            {start.toLocaleString('en-US', { month: 'short' })}
+            {start.toLocaleString("en-US", { month: "short" })}
           </span>
-          <span className="text-2xl font-black text-slate-900">
-            {start.getDate()}
-          </span>
+          <span className="text-2xl font-black text-slate-900">{start.getDate()}</span>
           <span className="text-[10px] font-semibold text-slate-500">
-            {start.toLocaleString('en-US', { weekday: 'short' })}
+            {start.toLocaleString("en-US", { weekday: "short" })}
           </span>
         </div>
 
-        {/* Right Content Block */}
         <div className="flex-1 p-4">
           <div className="mb-2 flex items-start justify-between gap-2">
             <div>
               <h3 className="font-bold text-slate-900 leading-tight">{booking.roomName}</h3>
               <div className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-500">
                 <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{booking.building} • {booking.roomCode}</span>
+                <span className="truncate">{booking.building} - {booking.roomCode}</span>
               </div>
             </div>
             <StatusBadge status={booking.status} />
@@ -42,7 +62,8 @@ export function BookingCard({ booking }: { booking: Booking }) {
             <div className="flex items-center gap-2 text-slate-600">
               <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
               <span className="font-semibold text-slate-700">
-                {start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} -{" "}
+                {end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </span>
             </div>
             <div className="flex items-center gap-2 text-slate-600">
@@ -65,7 +86,27 @@ export function BookingCard({ booking }: { booking: Booking }) {
             </div>
           )}
 
-          <div className="mt-3 text-right">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex gap-2">
+              <Button asChild variant="outline" size="sm" className="h-9 rounded-lg px-3">
+                <Link href={`/customer/bookings/${booking.id}/edit`}>
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit
+                </Link>
+              </Button>
+              {onDelete ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-9 rounded-lg px-3"
+                  disabled={deleting}
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  {deleting ? "Removing" : "Remove"}
+                </Button>
+              ) : null}
+            </div>
             <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
               Submitted {submitted.toLocaleDateString()}
             </span>
