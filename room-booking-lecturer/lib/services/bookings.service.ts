@@ -39,6 +39,10 @@ export function getMinBookingDateTimeInputValue(): string {
   return formatLocalDateTimeInput(getMinAllowedStartDate());
 }
 
+type AvailabilityInput = Pick<BookingInput, "roomId" | "startAt" | "endAt"> & {
+  excludeBookingId?: string;
+};
+
 export async function listMyBookings(): Promise<Booking[]> {
   await wait();
   return [...bookingsData].sort(
@@ -46,7 +50,12 @@ export async function listMyBookings(): Promise<Booking[]> {
   );
 }
 
-export async function checkRoomAvailability(input: Pick<BookingInput, "roomId" | "startAt" | "endAt">): Promise<AvailabilityResult> {
+export async function getBookingById(id: string): Promise<Booking | undefined> {
+  await wait();
+  return bookingsData.find((booking) => booking.id === id);
+}
+
+export async function checkRoomAvailability(input: AvailabilityInput): Promise<AvailabilityResult> {
   await wait();
 
   const room = roomsMock.find((entry) => entry.id === input.roomId);
@@ -75,6 +84,7 @@ export async function checkRoomAvailability(input: Pick<BookingInput, "roomId" |
   }
 
   const conflicting = bookingsData.some((booking) => {
+    if (booking.id === input.excludeBookingId) return false;
     if (booking.roomId !== input.roomId) return false;
     if (booking.status === "REJECTED" || booking.status === "CANCELLED") return false;
 
@@ -119,4 +129,49 @@ export async function createBookingRequest(input: BookingInput): Promise<Booking
 
   bookingsData = [booking, ...bookingsData];
   return booking;
+}
+
+export async function updateBookingRequest(id: string, input: BookingInput): Promise<Booking> {
+  const index = bookingsData.findIndex((booking) => booking.id === id);
+  if (index === -1) {
+    throw new Error("Booking not found");
+  }
+
+  const availability = await checkRoomAvailability({ ...input, excludeBookingId: id });
+  if (!availability.available) {
+    throw new Error(availability.message);
+  }
+
+  const room = roomsMock.find((entry) => entry.id === input.roomId);
+  if (!room) {
+    throw new Error("Selected room not found");
+  }
+
+  const updated: Booking = {
+    ...bookingsData[index],
+    roomId: input.roomId,
+    roomName: room.name,
+    building: room.building,
+    roomCode: room.code,
+    moduleName: input.moduleName,
+    startAt: new Date(input.startAt).toISOString(),
+    endAt: new Date(input.endAt).toISOString(),
+    purpose: input.purpose,
+    attendees: input.attendees,
+    status: "PENDING",
+    submittedAt: new Date().toISOString(),
+    reviewerNote: undefined,
+  };
+
+  bookingsData[index] = updated;
+  return updated;
+}
+
+export async function deleteBookingRequest(id: string): Promise<void> {
+  await wait();
+  const exists = bookingsData.some((booking) => booking.id === id);
+  if (!exists) {
+    throw new Error("Booking not found");
+  }
+  bookingsData = bookingsData.filter((booking) => booking.id !== id);
 }

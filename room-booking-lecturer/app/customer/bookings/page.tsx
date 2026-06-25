@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Plus, Filter } from "lucide-react";
+import { CalendarDays, Plus } from "lucide-react";
 
 import { BookingCard } from "@/components/cards/BookingCard";
 import { EmptyState } from "@/components/common/EmptyState";
+import { useToast } from "@/components/common/ToastProvider";
 import { Button } from "@/components/ui/button";
-import { listMyBookings } from "@/lib/services/bookings.service";
+import { deleteBookingRequest, listMyBookings } from "@/lib/services/bookings.service";
 import type { Booking, BookingStatus } from "@/lib/types/booking";
 
 const STATUS_FILTERS: Array<{ key: BookingStatus | "ALL"; label: string }> = [
@@ -23,6 +24,7 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState<BookingStatus | "ALL">("ALL");
   const [historyDays, setHistoryDays] = useState(7);
   const [visibleCount, setVisibleCount] = useState(5);
+  const { showToast } = useToast();
 
   useEffect(() => {
     async function loadData() {
@@ -54,6 +56,17 @@ export default function BookingsPage() {
     minSubmittedAt.setDate(now.getDate() - historyDays);
     return new Date(booking.submittedAt) < minSubmittedAt;
   });
+
+  const handleDelete = async (booking: Booking) => {
+    try {
+      await deleteBookingRequest(booking.id);
+      setBookings((current) => current.filter((item) => item.id !== booking.id));
+      showToast("Booking removed", "The booking was removed from your list.", "success");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to remove booking.";
+      showToast("Remove failed", message, "error");
+    }
+  };
 
   return (
     <div className="space-y-6 pb-24">
@@ -132,7 +145,7 @@ export default function BookingsPage() {
         ) : null}
 
         {visible.map((booking) => (
-          <BookingCard key={booking.id} booking={booking} />
+          <BookingCard key={booking.id} booking={booking} onDelete={handleDelete} />
         ))}
       </div>
 
