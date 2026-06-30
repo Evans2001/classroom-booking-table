@@ -13,7 +13,7 @@ export default function RegisterPage() {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-slate-600">
-            The current phase focuses on customer-side booking and issue portal frontend.
+            The current phase focuses on lecturer-side booking and issue portal frontend.
           </p>
           <Button asChild className="w-full">
             <Link href="/login">Back to Login</Link>

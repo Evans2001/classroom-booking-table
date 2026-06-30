@@ -113,7 +113,7 @@ export async function createBookingRequest(input: BookingInput): Promise<Booking
 
   const booking: Booking = {
     id: `bk-${Date.now()}`,
-    requesterName: "Demo Student",
+    requesterName: "Demo Lecturer",
     roomId: input.roomId,
     roomName: room.name,
     building: room.building,

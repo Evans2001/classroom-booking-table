@@ -13,7 +13,7 @@ export const issuesMock: Issue[] = [
     updates: [
       {
         status: "OPEN",
-        note: "Issue reported by student.",
+        note: "Issue reported by lecturer.",
         at: "2026-02-26T08:30:00.000Z",
       },
       {
@@ -52,7 +52,7 @@ export const issuesMock: Issue[] = [
     updates: [
       {
         status: "OPEN",
-        note: "Issue reported by student.",
+        note: "Issue reported by lecturer.",
         at: "2026-01-30T05:45:00.000Z",
       },
       {

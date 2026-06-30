@@ -89,7 +89,7 @@ export function BookingCard({ booking, onDelete }: BookingCardProps) {
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex gap-2">
               <Button asChild variant="outline" size="sm" className="h-9 rounded-lg px-3">
-                <Link href={`/customer/bookings/${booking.id}/edit`}>
+                <Link href={`/lecturer/bookings/${booking.id}/edit`}>
                   <Pencil className="mr-1.5 h-3.5 w-3.5" />
                   Edit
                 </Link>
