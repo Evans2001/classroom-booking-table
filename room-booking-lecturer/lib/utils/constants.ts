@@ -2,20 +2,20 @@ import type { BookingStatus } from "@/lib/types/booking";
 import type { IssueSeverity, IssueStatus } from "@/lib/types/issue";
 import type { RoomStatus, RoomType } from "@/lib/types/room";
 
-export const AUTH_COOKIE_NAME = "rb_customer_session";
+export const AUTH_COOKIE_NAME = "rb_lecturer_session";
 export const AUTH_COOKIE_VALUE = "1";
 export const AUTH_MAX_AGE_SECONDS = 60 * 60 * 8;
 
-export const DEMO_USER_EMAIL = "student@eng.ruh.ac.lk";
-export const DEMO_USER_PASSWORD = "Student@123";
+export const DEMO_USER_EMAIL = "lecturer@eng.ruh.ac.lk";
+export const DEMO_USER_PASSWORD = "Lecturer@123";
 
 export const MOBILE_NAV_ITEMS = [
-  { href: "/customer/dashboard", label: "Home" },
-  { href: "/customer/rooms", label: "Rooms" },
-  { href: "/customer/bookings", label: "Bookings" },
-  { href: "/customer/calendar", label: "Calendar" },
-  { href: "/customer/issues", label: "Issues" },
-  { href: "/customer/profile", label: "Profile" },
+  { href: "/lecturer/dashboard", label: "Home" },
+  { href: "/lecturer/rooms", label: "Rooms" },
+  { href: "/lecturer/bookings", label: "Bookings" },
+  { href: "/lecturer/calendar", label: "Calendar" },
+  { href: "/lecturer/issues", label: "Issues" },
+  { href: "/lecturer/profile", label: "Profile" },
 ] as const;
 
 export const ROOM_STATUS_LABELS: Record<RoomStatus, string> = {

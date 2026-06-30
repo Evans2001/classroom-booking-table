@@ -6,7 +6,7 @@ import { isAuthenticatedFromCookieStore } from "@/lib/auth/guard";
 export default async function Home() {
   const cookieStore = await cookies();
   if (isAuthenticatedFromCookieStore(cookieStore)) {
-    redirect("/customer/dashboard");
+    redirect("/lecturer/dashboard");
   }
   redirect("/login");
 }

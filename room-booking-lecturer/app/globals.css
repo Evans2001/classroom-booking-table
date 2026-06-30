@@ -56,8 +56,8 @@
   --color-action-neutral: var(--action-neutral);
   --color-border-subtle: var(--border-subtle);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: "Segoe UI", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, monospace;
 }
 
 * {
@@ -67,5 +67,9 @@
 body {
   background: var(--bg-app);
   color: var(--text-primary);
-  font-family: var(--font-geist-sans), sans-serif;
+  font-family: var(--font-sans);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
