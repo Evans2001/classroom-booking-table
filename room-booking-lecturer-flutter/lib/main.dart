@@ -569,11 +569,47 @@ class _LecturerHomeState extends State<LecturerHome> {
     );
   }
 
-  Future<void> openBookingForm(BuildContext context, [Room? room]) async {
+  Future<void> openBookingForm(
+    BuildContext context, {
+    Room? room,
+    Booking? booking,
+  }) async {
     await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => BookingFormScreen(defaultRoom: room)),
+      MaterialPageRoute(
+        builder: (_) => BookingFormScreen(defaultRoom: room, booking: booking),
+      ),
     );
     setState(() {});
+  }
+
+  void deleteBooking(BuildContext context, Booking booking) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete booking?'),
+        content: Text(
+          'This will remove the ${booking.roomCode} request for ${booking.moduleName}.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              setState(
+                () => bookings.removeWhere((item) => item.id == booking.id),
+              );
+              Navigator.of(dialogContext).pop();
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Booking deleted.')));
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> openIssueForm(BuildContext context, [Room? room]) async {
@@ -751,15 +787,33 @@ class BookingsScreen extends StatelessWidget {
   }
 }
 
-class CalendarScreen extends StatelessWidget {
+class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
   @override
+  State<CalendarScreen> createState() => _CalendarScreenState();
+}
+
+class _CalendarScreenState extends State<CalendarScreen> {
+  late DateTime visibleMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+  );
+  late DateTime selectedDate = bookings.isNotEmpty
+      ? DateTime(
+          bookings.first.startAt.year,
+          bookings.first.startAt.month,
+          bookings.first.startAt.day,
+        )
+      : DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+
+  @override
   Widget build(BuildContext context) {
-    final grouped = <String, List<Booking>>{};
-    for (final booking in bookings) {
-      grouped.putIfAbsent(dateLabel(booking.startAt), () => []).add(booking);
-    }
+    final selectedBookings =
+        bookings
+            .where((booking) => isSameDay(booking.startAt, selectedDate))
+            .toList()
+          ..sort((a, b) => a.startAt.compareTo(b.startAt));
 
     return AppScrollView(
       children: [
@@ -767,15 +821,73 @@ class CalendarScreen extends StatelessWidget {
           title: 'Teaching Calendar',
           subtitle: 'Approved and pending booking requests by date.',
         ),
-        ...grouped.entries.map(
-          (entry) => Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        CardPanel(
+          child: Column(
             children: [
-              SectionTitle(entry.key),
-              ...entry.value.map((booking) => BookingTile(booking: booking)),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Previous month',
+                    onPressed: () => setState(() {
+                      visibleMonth = DateTime(
+                        visibleMonth.year,
+                        visibleMonth.month - 1,
+                      );
+                    }),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${monthLong(visibleMonth)} ${visibleMonth.year}',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Next month',
+                    onPressed: () => setState(() {
+                      visibleMonth = DateTime(
+                        visibleMonth.year,
+                        visibleMonth.month + 1,
+                      );
+                    }),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Row(
+                children: [
+                  CalendarWeekday('M'),
+                  CalendarWeekday('T'),
+                  CalendarWeekday('W'),
+                  CalendarWeekday('T'),
+                  CalendarWeekday('F'),
+                  CalendarWeekday('S'),
+                  CalendarWeekday('S'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              CalendarMonthGrid(
+                month: visibleMonth,
+                selectedDate: selectedDate,
+                onDateSelected: (date) => setState(() => selectedDate = date),
+              ),
             ],
           ),
         ),
+        SectionTitle('Bookings on ${dateLabel(selectedDate)}'),
+        if (selectedBookings.isEmpty)
+          const EmptyPanel(
+            icon: Icons.event_busy_outlined,
+            title: 'No bookings',
+            subtitle: 'Choose another highlighted date or create a request.',
+          )
+        else
+          ...selectedBookings.map((booking) => BookingTile(booking: booking)),
       ],
     );
   }
@@ -933,7 +1045,7 @@ class RoomDetailsScreen extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: room.status == RoomStatus.unavailable
                       ? null
-                      : () => home?.openBookingForm(context, room),
+                      : () => home?.openBookingForm(context, room: room),
                   icon: const Icon(Icons.add),
                   label: const Text('Book Room'),
                 ),
@@ -947,22 +1059,43 @@ class RoomDetailsScreen extends StatelessWidget {
 }
 
 class BookingFormScreen extends StatefulWidget {
-  const BookingFormScreen({this.defaultRoom, super.key});
+  const BookingFormScreen({this.defaultRoom, this.booking, super.key});
 
   final Room? defaultRoom;
+  final Booking? booking;
 
   @override
   State<BookingFormScreen> createState() => _BookingFormScreenState();
 }
 
 class _BookingFormScreenState extends State<BookingFormScreen> {
-  late Room selectedRoom = widget.defaultRoom ?? rooms.first;
+  late Room selectedRoom =
+      widget.defaultRoom ??
+      rooms.firstWhere(
+        (room) => room.id == widget.booking?.roomId,
+        orElse: () => rooms.first,
+      );
   final moduleController = TextEditingController();
   final purposeController = TextEditingController();
-  final attendeesController = TextEditingController(text: '30');
-  DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
-  TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
-  TimeOfDay endTime = const TimeOfDay(hour: 10, minute: 0);
+  final attendeesController = TextEditingController();
+  late DateTime selectedDate =
+      widget.booking?.startAt ?? DateTime.now().add(const Duration(days: 1));
+  late TimeOfDay startTime = widget.booking == null
+      ? const TimeOfDay(hour: 9, minute: 0)
+      : TimeOfDay.fromDateTime(widget.booking!.startAt);
+  late TimeOfDay endTime = widget.booking == null
+      ? const TimeOfDay(hour: 10, minute: 0)
+      : TimeOfDay.fromDateTime(widget.booking!.endAt);
+
+  bool get isEditing => widget.booking != null;
+
+  @override
+  void initState() {
+    super.initState();
+    moduleController.text = widget.booking?.moduleName ?? '';
+    purposeController.text = widget.booking?.purpose ?? '';
+    attendeesController.text = '${widget.booking?.attendees ?? 30}';
+  }
 
   @override
   void dispose() {
@@ -996,30 +1129,46 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       endTime.hour,
       endTime.minute,
     );
-    bookings.insert(
-      0,
-      Booking(
-        id: 'bk-${DateTime.now().millisecondsSinceEpoch}',
-        roomId: selectedRoom.id,
-        roomName: selectedRoom.name,
-        building: selectedRoom.building,
-        roomCode: selectedRoom.code,
-        moduleName: module,
-        startAt: start,
-        endAt: end,
-        purpose: purpose,
-        attendees: attendees,
-        status: BookingStatus.pending,
-        submittedAt: DateTime.now(),
-      ),
+    if (!end.isAfter(start)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('End time must be after start time.')),
+      );
+      return;
+    }
+
+    final savedBooking = Booking(
+      id: widget.booking?.id ?? 'bk-${DateTime.now().millisecondsSinceEpoch}',
+      roomId: selectedRoom.id,
+      roomName: selectedRoom.name,
+      building: selectedRoom.building,
+      roomCode: selectedRoom.code,
+      moduleName: module,
+      startAt: start,
+      endAt: end,
+      purpose: purpose,
+      attendees: attendees,
+      status: widget.booking?.status ?? BookingStatus.pending,
+      submittedAt: widget.booking?.submittedAt ?? DateTime.now(),
+      reviewerNote: widget.booking?.reviewerNote,
     );
+
+    if (isEditing) {
+      final index = bookings.indexWhere(
+        (item) => item.id == widget.booking!.id,
+      );
+      if (index != -1) {
+        bookings[index] = savedBooking;
+      }
+    } else {
+      bookings.insert(0, savedBooking);
+    }
     Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Request Space')),
+      appBar: AppBar(title: Text(isEditing ? 'Edit Booking' : 'Request Space')),
       body: AppScrollView(
         children: [
           DropdownButtonFormField<Room>(
@@ -1060,7 +1209,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                 onPressed: () async {
                   final value = await showDatePicker(
                     context: context,
-                    firstDate: DateTime.now(),
+                    firstDate: DateTime(2020),
                     lastDate: DateTime.now().add(const Duration(days: 365)),
                     initialDate: selectedDate,
                   );
@@ -1096,7 +1245,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
             child: FilledButton.icon(
               onPressed: submit,
               icon: const Icon(Icons.send_outlined),
-              label: const Text('Submit Request'),
+              label: Text(isEditing ? 'Save Changes' : 'Submit Request'),
             ),
           ),
         ],
@@ -1333,6 +1482,138 @@ class RoomTile extends StatelessWidget {
   }
 }
 
+class CalendarWeekday extends StatelessWidget {
+  const CalendarWeekday(this.label, {super.key});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF64748B),
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class CalendarMonthGrid extends StatelessWidget {
+  const CalendarMonthGrid({
+    required this.month,
+    required this.selectedDate,
+    required this.onDateSelected,
+    super.key,
+  });
+
+  final DateTime month;
+  final DateTime selectedDate;
+  final ValueChanged<DateTime> onDateSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final firstDay = DateTime(month.year, month.month);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    final leadingBlanks = firstDay.weekday - 1;
+    final totalCells = leadingBlanks + daysInMonth;
+    final rowCount = (totalCells / 7).ceil();
+
+    return Column(
+      children: [
+        for (var row = 0; row < rowCount; row++)
+          Row(
+            children: [
+              for (var column = 0; column < 7; column++)
+                Expanded(
+                  child: _CalendarDayCell(
+                    dayNumber: row * 7 + column - leadingBlanks + 1,
+                    daysInMonth: daysInMonth,
+                    month: month,
+                    selectedDate: selectedDate,
+                    onDateSelected: onDateSelected,
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _CalendarDayCell extends StatelessWidget {
+  const _CalendarDayCell({
+    required this.dayNumber,
+    required this.daysInMonth,
+    required this.month,
+    required this.selectedDate,
+    required this.onDateSelected,
+  });
+
+  final int dayNumber;
+  final int daysInMonth;
+  final DateTime month;
+  final DateTime selectedDate;
+  final ValueChanged<DateTime> onDateSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      return const SizedBox(height: 48);
+    }
+
+    final date = DateTime(month.year, month.month, dayNumber);
+    final hasBooking = bookings.any(
+      (booking) => isSameDay(booking.startAt, date),
+    );
+    final isSelected = isSameDay(selectedDate, date);
+    final isToday = isSameDay(DateTime.now(), date);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => onDateSelected(date),
+      child: Container(
+        height: 48,
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: isSelected ? brandPrimary : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          border: isToday && !isSelected
+              ? Border.all(color: brandPrimary.withValues(alpha: 0.45))
+              : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              '$dayNumber',
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF0F172A),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Container(
+              height: 5,
+              width: 5,
+              decoration: BoxDecoration(
+                color: hasBooking
+                    ? (isSelected ? brandAccent : brandPrimary)
+                    : Colors.transparent,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class BookingTile extends StatelessWidget {
   const BookingTile({required this.booking, this.detailed = false, super.key});
 
@@ -1341,69 +1622,101 @@ class BookingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final home = context.findAncestorStateOfType<_LecturerHomeState>();
+
     return CardPanel(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
         children: [
-          Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: brandPrimary.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: brandPrimary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      monthShort(booking.startAt).toUpperCase(),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${booking.startAt.day}',
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      booking.roomName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${booking.moduleName} - ${timeLabel(booking.startAt)} to ${timeLabel(booking.endAt)}',
+                      style: const TextStyle(color: Color(0xFF64748B)),
+                    ),
+                    if (detailed) ...[
+                      const SizedBox(height: 8),
+                      Text(booking.purpose),
+                      Text(
+                        '${booking.attendees} attendees',
+                        style: const TextStyle(color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              StatusPill(
+                label: bookingStatusLabel(booking.status),
+                color: bookingStatusColor(booking.status),
+              ),
+            ],
+          ),
+          if (detailed) ...[
+            const SizedBox(height: 12),
+            Row(
               children: [
-                Text(
-                  monthShort(booking.startAt).toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        home?.openBookingForm(context, booking: booking),
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Edit'),
                   ),
                 ),
-                Text(
-                  '${booking.startAt.day}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => home?.deleteBooking(context, booking),
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Delete'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFDC2626),
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  booking.roomName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${booking.moduleName} - ${timeLabel(booking.startAt)} to ${timeLabel(booking.endAt)}',
-                  style: const TextStyle(color: Color(0xFF64748B)),
-                ),
-                if (detailed) ...[
-                  const SizedBox(height: 8),
-                  Text(booking.purpose),
-                  Text(
-                    '${booking.attendees} attendees',
-                    style: const TextStyle(color: Color(0xFF64748B)),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          StatusPill(
-            label: bookingStatusLabel(booking.status),
-            color: bookingStatusColor(booking.status),
-          ),
+          ],
         ],
       ),
     );
@@ -1819,4 +2132,26 @@ String monthShort(DateTime date) {
     'Dec',
   ];
   return months[date.month - 1];
+}
+
+String monthLong(DateTime date) {
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return months[date.month - 1];
+}
+
+bool isSameDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }
