@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Building2, AlertCircle, FileText, Camera, MapPin } from "lucide-react";
+import { Building2, AlertCircle, FileText, Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { IssueInput, IssueSeverity } from "@/lib/types/issue";
+import type { IssueInput } from "@/lib/types/issue";
 import type { Room } from "@/lib/types/room";
 
 interface IssueReportFormProps {

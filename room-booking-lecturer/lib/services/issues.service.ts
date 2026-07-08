@@ -38,7 +38,7 @@ export async function createIssue(input: IssueInput): Promise<Issue> {
     updates: [
       {
         status: "OPEN",
-        note: "Issue submitted from customer portal.",
+        note: "Issue submitted from lecturer mobile app.",
         at: now,
       },
     ],

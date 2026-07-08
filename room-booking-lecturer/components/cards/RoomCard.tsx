@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Building2, Users, Maximize, MapPin, ChevronRight, MonitorPlay } from "lucide-react";
+import { Building2, Users, ChevronRight, MonitorPlay } from "lucide-react";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { Room } from "@/lib/types/room";
 import { ROOM_TYPE_LABELS } from "@/lib/utils/constants";
@@ -13,7 +12,7 @@ export function RoomCard({ room }: { room: Room }) {
 
   return (
     <Card className="group overflow-hidden p-0 transition-all hover:shadow-xl hover:shadow-brand-primary/5 hover:border-brand-primary/20">
-      <Link href={`/customer/rooms/${room.id}`} className="block">
+      <Link href={`/lecturer/rooms/${room.id}`} className="block">
         {/* Top Header Section */}
         <div className="relative flex items-center justify-between p-4 pb-3">
           <div className="flex items-center gap-3">

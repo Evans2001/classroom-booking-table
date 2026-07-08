@@ -3,7 +3,7 @@ import type { Booking } from "@/lib/types/booking";
 export const bookingsMock: Booking[] = [
   {
     id: "bk-1",
-    requesterName: "Demo Student",
+    requesterName: "Demo Lecturer",
     roomId: "room-1",
     roomName: "Main Lecture Hall",
     building: "Engineering Block",
@@ -18,7 +18,7 @@ export const bookingsMock: Booking[] = [
   },
   {
     id: "bk-2",
-    requesterName: "Demo Student",
+    requesterName: "Demo Lecturer",
     roomId: "room-3",
     roomName: "Board Meeting Room",
     building: "Admin Building",
@@ -34,7 +34,7 @@ export const bookingsMock: Booking[] = [
   },
   {
     id: "bk-3",
-    requesterName: "Demo Student",
+    requesterName: "Demo Lecturer",
     roomId: "room-2",
     roomName: "Computer Lab A",
     building: "Science Complex",
@@ -50,7 +50,7 @@ export const bookingsMock: Booking[] = [
   },
   {
     id: "bk-4",
-    requesterName: "Demo Student",
+    requesterName: "Demo Lecturer",
     roomId: "room-1",
     roomName: "Main Lecture Hall",
     building: "Engineering Block",

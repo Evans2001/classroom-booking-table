@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertCircle, ChevronRight, MessageSquare, MapPin } from "lucide-react";
+import { AlertCircle, ChevronRight, MapPin } from "lucide-react";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Card } from "@/components/ui/card";
@@ -11,7 +11,7 @@ export function IssueCard({ issue }: { issue: Issue }) {
 
   return (
     <Card className={`group overflow-hidden p-0 transition-all hover:shadow-xl hover:shadow-action-danger/5 hover:border-action-danger/20 ${isResolved ? "opacity-75 grayscale-[0.3]" : ""}`}>
-      <Link href={`/customer/issues/${issue.id}`} className="block">
+      <Link href={`/lecturer/issues/${issue.id}`} className="block">
         <div className="flex p-4 gap-4 items-start">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${isResolved ? "bg-slate-100 text-slate-400" : "bg-action-danger/10 text-action-danger"}`}>
             <AlertCircle className="h-5 w-5" />

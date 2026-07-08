@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Building2, Mail, Lock, ArrowRight, Info } from "lucide-react";
+import { Mail, Lock, ArrowRight, Info } from "lucide-react";
 
 import { useToast } from "@/components/common/ToastProvider";
 import { Button } from "@/components/ui/button";
@@ -38,7 +37,7 @@ export default function LoginPage() {
       }
       document.cookie = `${AUTH_COOKIE_NAME}=${AUTH_COOKIE_VALUE}; path=/; max-age=${AUTH_MAX_AGE_SECONDS}`;
       showToast("Welcome Back!", "Signed in successfully.", "success");
-      router.push("/customer/dashboard");
+      router.push("/lecturer/dashboard");
       router.refresh();
     } finally {
       setSubmitting(false);
