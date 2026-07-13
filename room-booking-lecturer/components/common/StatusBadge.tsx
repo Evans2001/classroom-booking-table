@@ -16,6 +16,7 @@ export function StatusBadge({ status }: { status: StatusLike }) {
     status === "APPROVED" ||
     status === "AVAILABLE" ||
     status === "RESOLVED" ||
+    status === "CLOSED" ||
     status === "LOW"
   ) {
     classes = "border-emerald-200 bg-emerald-100 text-emerald-700";

@@ -1,14 +1,17 @@
-import { roomsMock } from "@/lib/data/rooms.mock";
 import type { Room } from "@/lib/types/room";
-
-const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 80));
+import { apiGet } from "@/lib/services/api-client";
 
 export async function listRooms(): Promise<Room[]> {
-  await wait();
-  return [...roomsMock];
+  return apiGet<Room[]>("/api/lecturer/rooms");
 }
 
 export async function getRoomById(id: string): Promise<Room | undefined> {
-  await wait();
-  return roomsMock.find((room) => room.id === id);
+  try {
+    return await apiGet<Room>(`/api/lecturer/rooms/${id}`);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Room not found") {
+      return undefined;
+    }
+    throw error;
+  }
 }
