@@ -1,87 +1,43 @@
-import { roomsMock } from "@/lib/data/rooms.mock";
 import type {
   CreateRoomInput,
   Room,
   RoomFilters,
   UpdateRoomInput,
 } from "@/lib/types/room";
-
-let roomsData: Room[] = [...roomsMock];
-
-const LATENCY_MS = 100;
-
-const delay = async () =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, LATENCY_MS);
-  });
-
-const buildRoomId = () => `room-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+import { apiGet, apiSend } from "@/lib/services/api-client";
 
 export async function listRooms(filters?: RoomFilters): Promise<Room[]> {
-  await delay();
-
-  let filtered = [...roomsData];
-  if (filters?.status && filters.status !== "ALL") {
-    filtered = filtered.filter((room) => room.status === filters.status);
-  }
-  if (filters?.type && filters.type !== "ALL") {
-    filtered = filtered.filter((room) => room.type === filters.type);
-  }
-  if (filters?.search) {
-    const query = filters.search.toLowerCase();
-    filtered = filtered.filter(
-      (room) =>
-        room.name.toLowerCase().includes(query) ||
-        room.code.toLowerCase().includes(query) ||
-        room.building.toLowerCase().includes(query),
-    );
-  }
-
-  return filtered.sort((a, b) => a.name.localeCompare(b.name));
+  const params = new URLSearchParams();
+  if (filters?.search) params.set("search", filters.search);
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.type) params.set("type", filters.type);
+  const query = params.toString();
+  return apiGet<Room[]>(`/api/admin/rooms${query ? `?${query}` : ""}`);
 }
 
 export async function getRoomById(id: string): Promise<Room | undefined> {
-  await delay();
-  return roomsData.find((room) => room.id === id);
+  try {
+    return await apiGet<Room>(`/api/admin/rooms/${id}`);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Room not found") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 export async function createRoom(input: CreateRoomInput): Promise<Room> {
-  await delay();
-  const timestamp = new Date().toISOString();
-  const room: Room = {
-    ...input,
-    id: buildRoomId(),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  roomsData = [room, ...roomsData];
-  return room;
+  return apiSend<Room>("/api/admin/rooms", "POST", input);
 }
 
 export async function updateRoom(id: string, patch: UpdateRoomInput): Promise<Room> {
-  await delay();
-  const index = roomsData.findIndex((room) => room.id === id);
-  if (index === -1) {
-    throw new Error("Room not found");
-  }
-  const updated: Room = {
-    ...roomsData[index],
-    ...patch,
-    updatedAt: new Date().toISOString(),
-  };
-  roomsData[index] = updated;
-  return updated;
+  return apiSend<Room>(`/api/admin/rooms/${id}`, "PATCH", patch);
 }
 
 export async function deleteRoom(id: string): Promise<void> {
-  await delay();
-  const index = roomsData.findIndex((room) => room.id === id);
-  if (index === -1) {
-    throw new Error("Room not found");
-  }
-  roomsData.splice(index, 1);
+  await apiSend<{ success: boolean }>(`/api/admin/rooms/${id}`, "DELETE");
 }
 
 export function __resetRoomsService(): void {
-  roomsData = [...roomsMock];
+  // Database-backed service: no-op retained for backward compatibility.
 }

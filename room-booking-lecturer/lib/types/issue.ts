@@ -1,5 +1,5 @@
 export type IssueSeverity = "LOW" | "MEDIUM" | "HIGH";
-export type IssueStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED";
+export type IssueStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
 
 export interface IssueUpdate {
   status: IssueStatus;

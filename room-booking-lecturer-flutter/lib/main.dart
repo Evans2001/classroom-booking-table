@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 void main() {
@@ -62,7 +65,7 @@ enum BookingStatus { pending, approved, rejected, cancelled }
 
 enum IssueSeverity { low, medium, high }
 
-enum IssueStatus { open, inProgress, resolved }
+enum IssueStatus { open, inProgress, resolved, closed }
 
 class Room {
   const Room({
@@ -156,6 +159,175 @@ class IssueUpdate {
   final IssueStatus status;
   final String note;
   final DateTime at;
+}
+
+const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+String get apiBaseUrl {
+  final configured = _configuredApiBaseUrl.trim();
+  if (configured.isNotEmpty) {
+    return configured.endsWith('/')
+        ? configured.substring(0, configured.length - 1)
+        : configured;
+  }
+
+  if (Platform.isAndroid) {
+    return 'http://10.0.2.2:3000';
+  }
+  return 'http://localhost:3000';
+}
+
+Future<dynamic> apiRequest(
+  String path, {
+  String method = 'GET',
+  Map<String, dynamic>? body,
+}) async {
+  final client = HttpClient();
+  final request = await client.openUrl(
+    method,
+    Uri.parse('$apiBaseUrl$path'),
+  );
+  request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+  if (body != null) {
+    request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+    request.write(jsonEncode(body));
+  }
+  final response = await request.close();
+  final responseText = await response.transform(utf8.decoder).join();
+  client.close();
+
+  dynamic decoded;
+  if (responseText.isNotEmpty) {
+    decoded = jsonDecode(responseText);
+  }
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    final errorMessage = decoded is Map<String, dynamic>
+        ? decoded['error'] as String? ?? 'Request failed.'
+        : 'Request failed.';
+    throw Exception(errorMessage);
+  }
+  return decoded;
+}
+
+RoomType roomTypeFromApi(String value) => switch (value) {
+  'LECTURE_HALL' => RoomType.lectureHall,
+  'LAB' => RoomType.lab,
+  _ => RoomType.meetingRoom,
+};
+
+RoomStatus roomStatusFromApi(String value) => switch (value) {
+  'AVAILABLE' => RoomStatus.available,
+  'LIMITED' => RoomStatus.limited,
+  _ => RoomStatus.unavailable,
+};
+
+BookingStatus bookingStatusFromApi(String value) => switch (value) {
+  'APPROVED' => BookingStatus.approved,
+  'REJECTED' => BookingStatus.rejected,
+  'CANCELLED' => BookingStatus.cancelled,
+  _ => BookingStatus.pending,
+};
+
+IssueSeverity issueSeverityFromApi(String value) => switch (value) {
+  'LOW' => IssueSeverity.low,
+  'HIGH' => IssueSeverity.high,
+  _ => IssueSeverity.medium,
+};
+
+IssueStatus issueStatusFromApi(String value) => switch (value) {
+  'IN_PROGRESS' => IssueStatus.inProgress,
+  'RESOLVED' => IssueStatus.resolved,
+  'CLOSED' => IssueStatus.closed,
+  _ => IssueStatus.open,
+};
+
+String issueSeverityToApi(IssueSeverity value) => switch (value) {
+  IssueSeverity.low => 'LOW',
+  IssueSeverity.medium => 'MEDIUM',
+  IssueSeverity.high => 'HIGH',
+};
+
+Map<String, dynamic> bookingInputToApi({
+  required Room room,
+  required String moduleName,
+  required DateTime startAt,
+  required DateTime endAt,
+  required String purpose,
+  required int attendees,
+}) => {
+  'roomId': room.id,
+  'moduleName': moduleName,
+  'startAt': startAt.toIso8601String(),
+  'endAt': endAt.toIso8601String(),
+  'purpose': purpose,
+  'attendees': attendees,
+};
+
+Room roomFromApi(Map<String, dynamic> json) => Room(
+  id: json['id'] as String,
+  code: json['code'] as String,
+  name: json['name'] as String,
+  building: json['building'] as String,
+  floor: json['floor'] as int,
+  capacity: json['capacity'] as int,
+  type: roomTypeFromApi(json['type'] as String),
+  status: roomStatusFromApi(json['status'] as String),
+  facilities: (json['facilities'] as List<dynamic>).cast<String>(),
+  description: json['description'] as String,
+);
+
+Booking bookingFromApi(Map<String, dynamic> json) => Booking(
+  id: json['id'] as String,
+  roomId: json['roomId'] as String,
+  roomName: json['roomName'] as String,
+  building: json['building'] as String,
+  roomCode: json['roomCode'] as String,
+  moduleName: json['moduleName'] as String,
+  startAt: DateTime.parse(json['startAt'] as String).toLocal(),
+  endAt: DateTime.parse(json['endAt'] as String).toLocal(),
+  purpose: json['purpose'] as String,
+  attendees: json['attendees'] as int,
+  status: bookingStatusFromApi(json['status'] as String),
+  submittedAt: DateTime.parse(json['submittedAt'] as String).toLocal(),
+  reviewerNote: json['reviewerNote'] as String?,
+);
+
+IssueUpdate issueUpdateFromApi(Map<String, dynamic> json) => IssueUpdate(
+  status: issueStatusFromApi(json['status'] as String),
+  note: json['note'] as String,
+  at: DateTime.parse(json['at'] as String).toLocal(),
+);
+
+Issue issueFromApi(Map<String, dynamic> json) => Issue(
+  id: json['id'] as String,
+  roomId: json['roomId'] as String,
+  roomName: json['roomName'] as String,
+  title: json['title'] as String,
+  description: json['description'] as String,
+  severity: issueSeverityFromApi(json['severity'] as String),
+  status: issueStatusFromApi(json['status'] as String),
+  createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+  updates: (json['updates'] as List<dynamic>)
+      .map((item) => issueUpdateFromApi(item as Map<String, dynamic>))
+      .toList(),
+);
+
+Future<void> loadSharedData() async {
+  final roomsJson = await apiRequest('/api/lecturer/rooms') as List<dynamic>;
+  final bookingsJson = await apiRequest('/api/lecturer/bookings') as List<dynamic>;
+  final issuesJson = await apiRequest('/api/lecturer/issues') as List<dynamic>;
+
+  rooms
+    ..clear()
+    ..addAll(roomsJson.map((item) => roomFromApi(item as Map<String, dynamic>)));
+  bookings
+    ..clear()
+    ..addAll(
+      bookingsJson.map((item) => bookingFromApi(item as Map<String, dynamic>)),
+    );
+  issues
+    ..clear()
+    ..addAll(issuesJson.map((item) => issueFromApi(item as Map<String, dynamic>)));
 }
 
 final rooms = <Room>[
@@ -510,6 +682,27 @@ class _LecturerHomeState extends State<LecturerHome> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    refreshData();
+  }
+
+  Future<void> refreshData() async {
+    try {
+      await loadSharedData();
+      if (mounted) {
+        setState(() {});
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Live data sync failed. Showing cached demo data.')),
+        );
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -579,7 +772,7 @@ class _LecturerHomeState extends State<LecturerHome> {
         builder: (_) => BookingFormScreen(defaultRoom: room, booking: booking),
       ),
     );
-    setState(() {});
+    await refreshData();
   }
 
   void deleteBooking(BuildContext context, Booking booking) {
@@ -596,14 +789,26 @@ class _LecturerHomeState extends State<LecturerHome> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              setState(
-                () => bookings.removeWhere((item) => item.id == booking.id),
-              );
-              Navigator.of(dialogContext).pop();
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Booking deleted.')));
+            onPressed: () async {
+              try {
+                await apiRequest(
+                  '/api/lecturer/bookings/${booking.id}',
+                  method: 'DELETE',
+                );
+                bookings.removeWhere((item) => item.id == booking.id);
+                if (mounted) {
+                  setState(() {});
+                }
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Booking deleted.')),
+                );
+              } catch (error) {
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+                );
+              }
             },
             child: const Text('Delete'),
           ),
@@ -616,7 +821,7 @@ class _LecturerHomeState extends State<LecturerHome> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => IssueFormScreen(defaultRoom: room)),
     );
-    setState(() {});
+    await refreshData();
   }
 }
 
@@ -1105,7 +1310,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     super.dispose();
   }
 
-  void submit() {
+  Future<void> submit() async {
     final module = moduleController.text.trim();
     final purpose = purposeController.text.trim();
     final attendees = int.tryParse(attendeesController.text.trim()) ?? 0;
@@ -1136,33 +1341,39 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       return;
     }
 
-    final savedBooking = Booking(
-      id: widget.booking?.id ?? 'bk-${DateTime.now().millisecondsSinceEpoch}',
-      roomId: selectedRoom.id,
-      roomName: selectedRoom.name,
-      building: selectedRoom.building,
-      roomCode: selectedRoom.code,
-      moduleName: module,
-      startAt: start,
-      endAt: end,
-      purpose: purpose,
-      attendees: attendees,
-      status: widget.booking?.status ?? BookingStatus.pending,
-      submittedAt: widget.booking?.submittedAt ?? DateTime.now(),
-      reviewerNote: widget.booking?.reviewerNote,
-    );
-
-    if (isEditing) {
-      final index = bookings.indexWhere(
-        (item) => item.id == widget.booking!.id,
+    try {
+      final response = await apiRequest(
+        isEditing
+            ? '/api/lecturer/bookings/${widget.booking!.id}'
+            : '/api/lecturer/bookings',
+        method: isEditing ? 'PUT' : 'POST',
+        body: bookingInputToApi(
+          room: selectedRoom,
+          moduleName: module,
+          startAt: start,
+          endAt: end,
+          purpose: purpose,
+          attendees: attendees,
+        ),
       );
-      if (index != -1) {
-        bookings[index] = savedBooking;
+      final savedBooking = bookingFromApi(response as Map<String, dynamic>);
+
+      if (isEditing) {
+        final index = bookings.indexWhere((item) => item.id == widget.booking!.id);
+        if (index != -1) {
+          bookings[index] = savedBooking;
+        }
+      } else {
+        bookings.insert(0, savedBooking);
       }
-    } else {
-      bookings.insert(0, savedBooking);
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
     }
-    Navigator.of(context).pop();
   }
 
   @override
@@ -1198,7 +1409,11 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
           TextField(
             controller: attendeesController,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Attendees'),
+            decoration: InputDecoration(
+              labelText: 'Expected attendees',
+              helperText:
+                  'Room capacity: ${selectedRoom.capacity} seats',
+            ),
           ),
           Wrap(
             spacing: 10,
@@ -1276,7 +1491,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
     super.dispose();
   }
 
-  void submit() {
+  Future<void> submit() async {
     final title = titleController.text.trim();
     final description = descriptionController.text.trim();
     if (title.isEmpty || description.isEmpty) {
@@ -1285,27 +1500,26 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
       );
       return;
     }
-    issues.insert(
-      0,
-      Issue(
-        id: 'is-${DateTime.now().millisecondsSinceEpoch}',
-        roomId: selectedRoom.id,
-        roomName: selectedRoom.name,
-        title: title,
-        description: description,
-        severity: severity,
-        status: IssueStatus.open,
-        createdAt: DateTime.now(),
-        updates: [
-          IssueUpdate(
-            status: IssueStatus.open,
-            note: 'Issue submitted from lecturer mobile app.',
-            at: DateTime.now(),
-          ),
-        ],
-      ),
-    );
-    Navigator.of(context).pop();
+    try {
+      final response = await apiRequest(
+        '/api/lecturer/issues',
+        method: 'POST',
+        body: {
+          'roomId': selectedRoom.id,
+          'title': title,
+          'description': description,
+          'severity': issueSeverityToApi(severity),
+        },
+      );
+      issues.insert(0, issueFromApi(response as Map<String, dynamic>));
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
   }
 
   @override
@@ -2096,12 +2310,14 @@ String issueStatusLabel(IssueStatus status) => switch (status) {
   IssueStatus.open => 'Open',
   IssueStatus.inProgress => 'In Progress',
   IssueStatus.resolved => 'Resolved',
+  IssueStatus.closed => 'Closed',
 };
 
 Color issueStatusColor(IssueStatus status) => switch (status) {
   IssueStatus.open => const Color(0xFFDC2626),
   IssueStatus.inProgress => const Color(0xFFD97706),
   IssueStatus.resolved => const Color(0xFF059669),
+  IssueStatus.closed => const Color(0xFF64748B),
 };
 
 String dateLabel(DateTime date) =>

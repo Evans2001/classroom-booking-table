@@ -31,8 +31,8 @@ export const requestsColumns: DataColumn<BookingRequest>[] = [
   },
   {
     key: "room",
-    header: "Room ID",
-    render: (request) => request.roomId,
+    header: "Classroom",
+    render: (request) => request.roomName ?? request.roomId,
   },
   {
     key: "status",
