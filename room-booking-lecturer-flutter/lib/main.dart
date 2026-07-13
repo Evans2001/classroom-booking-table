@@ -183,10 +183,7 @@ Future<dynamic> apiRequest(
   Map<String, dynamic>? body,
 }) async {
   final client = HttpClient();
-  final request = await client.openUrl(
-    method,
-    Uri.parse('$apiBaseUrl$path'),
-  );
+  final request = await client.openUrl(method, Uri.parse('$apiBaseUrl$path'));
   request.headers.set(HttpHeaders.acceptHeader, 'application/json');
   if (body != null) {
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
@@ -314,12 +311,15 @@ Issue issueFromApi(Map<String, dynamic> json) => Issue(
 
 Future<void> loadSharedData() async {
   final roomsJson = await apiRequest('/api/lecturer/rooms') as List<dynamic>;
-  final bookingsJson = await apiRequest('/api/lecturer/bookings') as List<dynamic>;
+  final bookingsJson =
+      await apiRequest('/api/lecturer/bookings') as List<dynamic>;
   final issuesJson = await apiRequest('/api/lecturer/issues') as List<dynamic>;
 
   rooms
     ..clear()
-    ..addAll(roomsJson.map((item) => roomFromApi(item as Map<String, dynamic>)));
+    ..addAll(
+      roomsJson.map((item) => roomFromApi(item as Map<String, dynamic>)),
+    );
   bookings
     ..clear()
     ..addAll(
@@ -327,7 +327,9 @@ Future<void> loadSharedData() async {
     );
   issues
     ..clear()
-    ..addAll(issuesJson.map((item) => issueFromApi(item as Map<String, dynamic>)));
+    ..addAll(
+      issuesJson.map((item) => issueFromApi(item as Map<String, dynamic>)),
+    );
 }
 
 final rooms = <Room>[
@@ -696,7 +698,9 @@ class _LecturerHomeState extends State<LecturerHome> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Live data sync failed. Showing cached demo data.')),
+          const SnackBar(
+            content: Text('Live data sync failed. Showing cached demo data.'),
+          ),
         );
       }
     }
@@ -799,14 +803,24 @@ class _LecturerHomeState extends State<LecturerHome> {
                 if (mounted) {
                   setState(() {});
                 }
+                if (!dialogContext.mounted || !context.mounted) {
+                  return;
+                }
                 Navigator.of(dialogContext).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Booking deleted.')),
                 );
               } catch (error) {
+                if (!dialogContext.mounted || !context.mounted) {
+                  return;
+                }
                 Navigator.of(dialogContext).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+                  SnackBar(
+                    content: Text(
+                      error.toString().replaceFirst('Exception: ', ''),
+                    ),
+                  ),
                 );
               }
             },
@@ -1359,7 +1373,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       final savedBooking = bookingFromApi(response as Map<String, dynamic>);
 
       if (isEditing) {
-        final index = bookings.indexWhere((item) => item.id == widget.booking!.id);
+        final index = bookings.indexWhere(
+          (item) => item.id == widget.booking!.id,
+        );
         if (index != -1) {
           bookings[index] = savedBooking;
         }
@@ -1370,8 +1386,13 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
         Navigator.of(context).pop();
       }
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     }
   }
@@ -1411,8 +1432,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
               labelText: 'Expected attendees',
-              helperText:
-                  'Room capacity: ${selectedRoom.capacity} seats',
+              helperText: 'Room capacity: ${selectedRoom.capacity} seats',
             ),
           ),
           Wrap(
@@ -1516,8 +1536,13 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
         Navigator.of(context).pop();
       }
     } catch (error) {
+      if (!mounted) {
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     }
   }
