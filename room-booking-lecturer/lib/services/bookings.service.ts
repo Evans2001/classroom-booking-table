@@ -1,42 +1,14 @@
-import { bookingsMock } from "@/lib/data/bookings.mock";
-import { roomsMock } from "@/lib/data/rooms.mock";
 import type { AvailabilityResult, Booking, BookingInput } from "@/lib/types/booking";
-
-let bookingsData: Booking[] = [...bookingsMock];
-
-const wait = () => new Promise<void>((resolve) => setTimeout(resolve, 90));
-const BOOKING_MIN_DAYS_AHEAD = 7;
-
-function getMinAllowedStartDate(): Date {
-  const min = new Date();
-  min.setHours(0, 0, 0, 0);
-  min.setDate(min.getDate() + BOOKING_MIN_DAYS_AHEAD);
-  return min;
-}
-
-function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
-
-function toDate(value: string): Date | null {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-  return parsed;
-}
-
-function formatLocalDateTimeInput(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
+import { apiGet, apiSend } from "@/lib/services/api-client";
 
 export function getMinBookingDateTimeInputValue(): string {
-  return formatLocalDateTimeInput(getMinAllowedStartDate());
+  const min = new Date();
+  min.setHours(0, 0, 0, 0);
+  min.setDate(min.getDate() + 7);
+  const year = min.getFullYear();
+  const month = `${min.getMonth() + 1}`.padStart(2, "0");
+  const day = `${min.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}T00:00`;
 }
 
 type AvailabilityInput = Pick<BookingInput, "roomId" | "startAt" | "endAt"> & {
@@ -44,134 +16,32 @@ type AvailabilityInput = Pick<BookingInput, "roomId" | "startAt" | "endAt"> & {
 };
 
 export async function listMyBookings(): Promise<Booking[]> {
-  await wait();
-  return [...bookingsData].sort(
-    (a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
-  );
+  return apiGet<Booking[]>("/api/lecturer/bookings");
 }
 
 export async function getBookingById(id: string): Promise<Booking | undefined> {
-  await wait();
-  return bookingsData.find((booking) => booking.id === id);
+  try {
+    return await apiGet<Booking>(`/api/lecturer/bookings/${id}`);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Booking not found") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 export async function checkRoomAvailability(input: AvailabilityInput): Promise<AvailabilityResult> {
-  await wait();
-
-  const room = roomsMock.find((entry) => entry.id === input.roomId);
-  if (!room) {
-    return { available: false, message: "Selected room not found." };
-  }
-  if (room.status === "UNAVAILABLE") {
-    return { available: false, message: "Room is currently unavailable." };
-  }
-
-  const startAt = toDate(input.startAt);
-  const endAt = toDate(input.endAt);
-  if (!startAt || !endAt) {
-    return { available: false, message: "Choose valid start and end date/time." };
-  }
-  if (endAt <= startAt) {
-    return { available: false, message: "End date/time must be after start date/time." };
-  }
-
-  const minAllowed = getMinAllowedStartDate();
-  if (startAt < minAllowed) {
-    return {
-      available: false,
-      message: `Bookings must be made at least ${BOOKING_MIN_DAYS_AHEAD} days in advance.`,
-    };
-  }
-
-  const conflicting = bookingsData.some((booking) => {
-    if (booking.id === input.excludeBookingId) return false;
-    if (booking.roomId !== input.roomId) return false;
-    if (booking.status === "REJECTED" || booking.status === "CANCELLED") return false;
-
-    const bookingStart = new Date(booking.startAt);
-    const bookingEnd = new Date(booking.endAt);
-    return overlaps(startAt, endAt, bookingStart, bookingEnd);
-  });
-
-  if (conflicting) {
-    return { available: false, message: "Room is not available for the selected period." };
-  }
-
-  return { available: true, message: "Room is available for this period." };
+  return apiSend<AvailabilityResult>("/api/lecturer/bookings/availability", "POST", input);
 }
 
 export async function createBookingRequest(input: BookingInput): Promise<Booking> {
-  const availability = await checkRoomAvailability(input);
-  if (!availability.available) {
-    throw new Error(availability.message);
-  }
-
-  const room = roomsMock.find((entry) => entry.id === input.roomId);
-  if (!room) {
-    throw new Error("Selected room not found");
-  }
-
-  const booking: Booking = {
-    id: `bk-${Date.now()}`,
-    requesterName: "Demo Lecturer",
-    roomId: input.roomId,
-    roomName: room.name,
-    building: room.building,
-    roomCode: room.code,
-    moduleName: input.moduleName,
-    startAt: new Date(input.startAt).toISOString(),
-    endAt: new Date(input.endAt).toISOString(),
-    purpose: input.purpose,
-    attendees: input.attendees,
-    status: "PENDING",
-    submittedAt: new Date().toISOString(),
-  };
-
-  bookingsData = [booking, ...bookingsData];
-  return booking;
+  return apiSend<Booking>("/api/lecturer/bookings", "POST", input);
 }
 
 export async function updateBookingRequest(id: string, input: BookingInput): Promise<Booking> {
-  const index = bookingsData.findIndex((booking) => booking.id === id);
-  if (index === -1) {
-    throw new Error("Booking not found");
-  }
-
-  const availability = await checkRoomAvailability({ ...input, excludeBookingId: id });
-  if (!availability.available) {
-    throw new Error(availability.message);
-  }
-
-  const room = roomsMock.find((entry) => entry.id === input.roomId);
-  if (!room) {
-    throw new Error("Selected room not found");
-  }
-
-  const updated: Booking = {
-    ...bookingsData[index],
-    roomId: input.roomId,
-    roomName: room.name,
-    building: room.building,
-    roomCode: room.code,
-    moduleName: input.moduleName,
-    startAt: new Date(input.startAt).toISOString(),
-    endAt: new Date(input.endAt).toISOString(),
-    purpose: input.purpose,
-    attendees: input.attendees,
-    status: "PENDING",
-    submittedAt: new Date().toISOString(),
-    reviewerNote: undefined,
-  };
-
-  bookingsData[index] = updated;
-  return updated;
+  return apiSend<Booking>(`/api/lecturer/bookings/${id}`, "PUT", input);
 }
 
 export async function deleteBookingRequest(id: string): Promise<void> {
-  await wait();
-  const exists = bookingsData.some((booking) => booking.id === id);
-  if (!exists) {
-    throw new Error("Booking not found");
-  }
-  bookingsData = bookingsData.filter((booking) => booking.id !== id);
+  await apiSend<{ success: boolean }>(`/api/lecturer/bookings/${id}`, "DELETE");
 }

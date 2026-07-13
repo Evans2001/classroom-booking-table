@@ -71,6 +71,10 @@ export function BookingRequestForm({
     () => rooms.filter((room) => room.building === building),
     [rooms, building],
   );
+  const selectedRoom = useMemo(
+    () => rooms.find((room) => room.id === form.roomId),
+    [form.roomId, rooms],
+  );
 
   useEffect(() => {
     if (!filteredRooms.length) {
@@ -234,10 +238,19 @@ export function BookingRequestForm({
             onChange={(event) =>
               setForm((previous) => ({ ...previous, attendees: Number(event.target.value) }))
             }
-            placeholder="Number of Attendees"
+            placeholder={
+              selectedRoom
+                ? `Number of attendees (Room capacity: ${selectedRoom.capacity})`
+                : "Number of attendees"
+            }
             className="pl-10 h-12 bg-slate-50"
           />
         </div>
+        {selectedRoom ? (
+          <p className="text-xs font-medium text-slate-500">
+            Room capacity: {selectedRoom.capacity} seats
+          </p>
+        ) : null}
         <Textarea
           required
           value={form.purpose}

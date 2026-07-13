@@ -44,10 +44,10 @@ export default function IssuesPage() {
       if (createdAt < minCreatedAt) return false;
 
       if (concernFilter === "CONCERNED") {
-        return issue.status !== "RESOLVED";
+        return issue.status !== "RESOLVED" && issue.status !== "CLOSED";
       }
       if (concernFilter === "NOT_CONCERNED") {
-        return issue.status === "RESOLVED";
+        return issue.status === "RESOLVED" || issue.status === "CLOSED";
       }
       return true;
     });

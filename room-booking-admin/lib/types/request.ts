@@ -6,6 +6,7 @@ export interface BookingRequest {
   requesterEmail: string;
   department: string;
   roomId: string;
+  roomName?: string;
   purpose: string;
   date: string;
   startTime: string;
