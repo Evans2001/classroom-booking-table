@@ -47,7 +47,7 @@ export default function IssueDetailPage() {
     );
   }
 
-  const isResolved = issue.status === "RESOLVED";
+  const isResolved = issue.status === "RESOLVED" || issue.status === "CLOSED";
 
   return (
     <div className="space-y-6 pb-24">

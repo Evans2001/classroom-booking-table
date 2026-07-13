@@ -7,7 +7,7 @@ import type { Issue } from "@/lib/types/issue";
 import { formatDateTime } from "@/lib/utils/format";
 
 export function IssueCard({ issue }: { issue: Issue }) {
-  const isResolved = issue.status === "RESOLVED";
+  const isResolved = issue.status === "RESOLVED" || issue.status === "CLOSED";
 
   return (
     <Card className={`group overflow-hidden p-0 transition-all hover:shadow-xl hover:shadow-action-danger/5 hover:border-action-danger/20 ${isResolved ? "opacity-75 grayscale-[0.3]" : ""}`}>

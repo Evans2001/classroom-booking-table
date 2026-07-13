@@ -41,6 +41,7 @@ export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
   OPEN: "Open",
   IN_PROGRESS: "In Progress",
   RESOLVED: "Resolved",
+  CLOSED: "Closed",
 };
 
 export const ISSUE_SEVERITY_LABELS: Record<IssueSeverity, string> = {
