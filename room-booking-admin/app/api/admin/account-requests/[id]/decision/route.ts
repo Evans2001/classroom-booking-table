@@ -12,7 +12,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (body.decision !== "APPROVED" && body.decision !== "REJECTED") {
       throw new Error("Choose approve or reject.");
     }
-    return json(decideLecturerAccountRequest(id, body.decision, body.note));
+    return json(await decideLecturerAccountRequest(id, body.decision, body.note));
   } catch (error) {
     return errorResponse(error);
   }
