@@ -1,33 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is the admin dashboard for the classroom booking system.
 
 ## Getting Started
 
-First, run the development server:
+First, install dependencies and run the development server:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Lecturer credential emails
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+When an admin approves a lecturer account request, the system creates a username and temporary password. If SMTP is configured, those credentials are emailed to the lecturer. If SMTP is not configured, the account is still created and the message is stored in the local `email_outbox` table.
 
-## Learn More
+Create `room-booking-admin/.env.local` with these values:
 
-To learn more about Next.js, take a look at the following resources:
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your.admin.gmail@gmail.com
+SMTP_PASS=your-gmail-app-password
+SMTP_FROM=Classroom Booking Admin <your.admin.gmail@gmail.com>
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+For Gmail, use an app password, not your normal Gmail password. Enable 2-step verification on the Gmail account, then create an app password and use it as `SMTP_PASS`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Restart the dev server after changing `.env.local`.
 
 ## Deploy on Vercel
 
