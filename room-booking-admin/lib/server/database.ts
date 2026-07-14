@@ -19,6 +19,7 @@ import type {
   IssueFilters,
   IssueStatus,
 } from "@/lib/types/issue";
+import { buildLecturerCredentialsEmail, sendLecturerCredentialsEmail } from "@/lib/server/mailer";
 
 const DB_DIRECTORY = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIRECTORY, "room-booking.sqlite");
@@ -1451,11 +1452,11 @@ export function listLecturerAccountRequests(status?: LecturerAccountRequestStatu
   return rows.map(mapLecturerAccountRequestRow);
 }
 
-export function decideLecturerAccountRequest(
+export async function decideLecturerAccountRequest(
   id: string,
   decision: "APPROVED" | "REJECTED",
   note?: string,
-): LecturerAccountRequest {
+): Promise<LecturerAccountRequest> {
   const database = getDatabase();
   const current = database
     .prepare("SELECT * FROM lecturer_account_requests WHERE id = ?")
@@ -1482,6 +1483,18 @@ export function decideLecturerAccountRequest(
     }
     username = uniqueUsername(database, current.name, current.id_number);
     const temporaryPassword = generateTemporaryPassword();
+    const credentialsEmail = buildLecturerCredentialsEmail({
+      recipient: current.gmail,
+      lecturerName: current.name,
+      username,
+      temporaryPassword,
+    });
+    const mailResult = await sendLecturerCredentialsEmail({
+      recipient: current.gmail,
+      lecturerName: current.name,
+      username,
+      temporaryPassword,
+    });
     database
       .prepare(
         `
@@ -1508,10 +1521,14 @@ export function decideLecturerAccountRequest(
     insertEmail(
       database,
       current.gmail,
-      "Your classroom booking lecturer account",
-      `Hello ${current.name},\n\nYour lecturer account has been created.\n\nUsername: ${username}\nTemporary password: ${temporaryPassword}\n\nPlease sign in and change your password immediately.`,
+      credentialsEmail.subject,
+      credentialsEmail.text,
     );
-    reviewNote = note?.trim() || "Account created and credentials sent to lecturer Gmail.";
+    reviewNote =
+      note?.trim() ||
+      (mailResult.sent
+        ? "Account created and credentials sent to lecturer Gmail."
+        : `Account created and credentials saved to email outbox. ${mailResult.skippedReason}`);
   }
 
   database
