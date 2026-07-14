@@ -9,7 +9,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const { id } = await context.params;
     const body = await request.json();
-    return json(decideAdminRequest(id, body.decision, body.note));
+    return json(await decideAdminRequest(id, body.decision, body.note));
   } catch (error) {
     return errorResponse(error);
   }

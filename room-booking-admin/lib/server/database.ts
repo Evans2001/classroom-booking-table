@@ -19,7 +19,18 @@ import type {
   IssueFilters,
   IssueStatus,
 } from "@/lib/types/issue";
-import { buildLecturerCredentialsEmail, sendLecturerCredentialsEmail } from "@/lib/server/mailer";
+import {
+  buildBookingDecisionEmail,
+  buildBookingSubmittedEmail,
+  buildIssueStatusEmail,
+  buildIssueSubmittedEmail,
+  buildLecturerAccountRejectedEmail,
+  buildLecturerCredentialsEmail,
+  sendEmailNotification,
+  sendLecturerCredentialsEmail,
+  type EmailNotification,
+} from "@/lib/server/mailer";
+import { sendPushNotification } from "@/lib/server/push";
 
 const DB_DIRECTORY = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIRECTORY, "room-booking.sqlite");
@@ -637,6 +648,15 @@ function getDatabase(): DatabaseSync {
         created_at TEXT NOT NULL,
         sent_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS lecturer_push_tokens (
+        id TEXT PRIMARY KEY,
+        lecturer_email TEXT NOT NULL,
+        token TEXT NOT NULL UNIQUE,
+        platform TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
     seedIfNeeded(database);
     ensureDefaultAccounts(database);
@@ -697,6 +717,51 @@ function insertEmail(database: DatabaseSync, recipient: string, subject: string,
   database
     .prepare("INSERT INTO email_outbox (id, recipient, subject, body, created_at, sent_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(`mail-${randomUUID()}`, recipient, subject, body, now, now);
+}
+
+async function sendAndArchiveNotification(
+  database: DatabaseSync,
+  recipient: string | undefined,
+  email: EmailNotification,
+): Promise<void> {
+  if (!recipient) {
+    return;
+  }
+  insertEmail(database, recipient, email.subject, email.text);
+  try {
+    await sendEmailNotification({
+      recipient,
+      subject: email.subject,
+      text: email.text,
+    });
+  } catch (error) {
+    console.error("Unable to send lecturer notification email", error);
+  }
+  const tokens = listLecturerPushTokensByEmail(recipient);
+  for (const token of tokens) {
+    await sendPushNotification({
+      token,
+      title: email.subject,
+      body: email.text.split("\n").filter(Boolean).slice(1, 3).join(" "),
+    });
+  }
+}
+
+function findLecturerEmailByName(database: DatabaseSync, name: string): string | undefined {
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name)) {
+    return normalizeEmail(name);
+  }
+  const row = database
+    .prepare("SELECT gmail FROM lecturer_accounts WHERE name = ?")
+    .get(name) as { gmail: string } | undefined;
+  return row?.gmail;
+}
+
+function listLecturerPushTokensByEmail(email: string): string[] {
+  const rows = getDatabase()
+    .prepare("SELECT token FROM lecturer_push_tokens WHERE lecturer_email = ?")
+    .all(normalizeEmail(email)) as { token: string }[];
+  return rows.map((row) => row.token);
 }
 
 function ensureDefaultAccounts(database: DatabaseSync) {
@@ -1216,11 +1281,11 @@ export function getAdminRequestById(id: string): BookingRequest | undefined {
   return row ? mapBookingRowToAdminRequest(row) : undefined;
 }
 
-export function decideAdminRequest(
+export async function decideAdminRequest(
   id: string,
   decision: "APPROVED" | "REJECTED",
   note?: string,
-): BookingRequest {
+): Promise<BookingRequest> {
   const current = getAdminRequestById(id);
   if (!current) {
     throw new Error("Request not found");
@@ -1251,6 +1316,20 @@ export function decideAdminRequest(
   if (!updated) {
     throw new Error("Request not found");
   }
+  await sendAndArchiveNotification(
+    database,
+    updated.requesterEmail,
+    buildBookingDecisionEmail({
+      lecturerName: updated.requesterName,
+      roomName: updated.roomName ?? updated.roomId,
+      date: updated.date,
+      startTime: updated.startTime,
+      endTime: updated.endTime,
+      purpose: updated.purpose,
+      decision,
+      note: note?.trim() || undefined,
+    }),
+  );
   return updated;
 }
 
@@ -1339,7 +1418,7 @@ export function getAdminIssueById(id: string): AdminIssue | undefined {
   return row ? mapIssueRowToAdminIssue(row) : undefined;
 }
 
-export function updateAdminIssueStatus(id: string, status: IssueStatus, note?: string): AdminIssue {
+export async function updateAdminIssueStatus(id: string, status: IssueStatus, note?: string): Promise<AdminIssue> {
   const current = getAdminIssueById(id);
   if (!current) {
     throw new Error("Issue not found");
@@ -1369,6 +1448,17 @@ export function updateAdminIssueStatus(id: string, status: IssueStatus, note?: s
   if (!updated) {
     throw new Error("Issue not found");
   }
+  await sendAndArchiveNotification(
+    database,
+    findLecturerEmailByName(database, updated.reportedBy),
+    buildIssueStatusEmail({
+      lecturerName: updated.reportedBy,
+      roomName: updated.roomId,
+      title: updated.title,
+      status,
+      note: note?.trim() || undefined,
+    }),
+  );
   return updated;
 }
 
@@ -1529,6 +1619,15 @@ export async function decideLecturerAccountRequest(
       (mailResult.sent
         ? "Account created and credentials sent to lecturer Gmail."
         : `Account created and credentials saved to email outbox. ${mailResult.skippedReason}`);
+  } else {
+    await sendAndArchiveNotification(
+      database,
+      current.gmail,
+      buildLecturerAccountRejectedEmail({
+        lecturerName: current.name,
+        note: note?.trim() || undefined,
+      }),
+    );
   }
 
   database
@@ -1572,6 +1671,43 @@ export function changeLecturerPassword(identifier: string, currentPassword: stri
     .prepare("SELECT * FROM lecturer_accounts WHERE id = ?")
     .get(account.id) as LecturerAccountRow;
   return mapLecturerAccountRow(row);
+}
+
+export function registerLecturerPushToken(input: {
+  lecturerEmail: string;
+  token: string;
+  platform?: string;
+}): void {
+  const lecturerEmail = normalizeEmail(input.lecturerEmail ?? "");
+  const token = input.token?.trim();
+  const platform = input.platform?.trim() || "android";
+  if (!lecturerEmail || !token) {
+    throw new Error("Lecturer email and push token are required.");
+  }
+  const database = getDatabase();
+  const account = database
+    .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ?")
+    .get(lecturerEmail) as { id: string } | undefined;
+  if (!account) {
+    throw new Error("Lecturer account not found.");
+  }
+  const existing = database
+    .prepare("SELECT id FROM lecturer_push_tokens WHERE token = ?")
+    .get(token) as { id: string } | undefined;
+  const now = new Date().toISOString();
+  if (existing) {
+    database
+      .prepare(
+        "UPDATE lecturer_push_tokens SET lecturer_email = ?, platform = ?, updated_at = ? WHERE token = ?",
+      )
+      .run(lecturerEmail, platform, now, token);
+    return;
+  }
+  database
+    .prepare(
+      "INSERT INTO lecturer_push_tokens (id, lecturer_email, token, platform, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .run(`push-${randomUUID()}`, lecturerEmail, token, platform, now, now);
 }
 
 export function listLecturerRooms(): LecturerRoom[] {
@@ -1622,7 +1758,7 @@ export function checkLecturerRoomAvailability(input: BookingAvailabilityInput): 
   return { available: true, message: "Room is available for this period." };
 }
 
-export function createLecturerBooking(input: BookingInput): LecturerBooking {
+export async function createLecturerBooking(input: BookingInput): Promise<LecturerBooking> {
   assertValidBookingInput(input);
   const availability = checkLecturerRoomAvailability(input);
   if (!availability.available) {
@@ -1663,6 +1799,18 @@ export function createLecturerBooking(input: BookingInput): LecturerBooking {
   if (!booking) {
     throw new Error("Booking not found");
   }
+  await sendAndArchiveNotification(
+    getDatabase(),
+    DEMO_LECTURER_EMAIL,
+    buildBookingSubmittedEmail({
+      lecturerName: booking.requesterName,
+      roomName: booking.roomName,
+      date: formatLocalDate(new Date(booking.startAt)),
+      startTime: formatLocalTime(new Date(booking.startAt)),
+      endTime: formatLocalTime(new Date(booking.endAt)),
+      purpose: booking.purpose,
+    }),
+  );
   return booking;
 }
 
@@ -1745,7 +1893,7 @@ export function getLecturerIssueById(id: string): LecturerIssue | undefined {
   return row ? mapIssueRowToLecturerIssue(row, getIssueUpdates(id)) : undefined;
 }
 
-export function createLecturerIssue(input: IssueInput): LecturerIssue {
+export async function createLecturerIssue(input: IssueInput): Promise<LecturerIssue> {
   const room = getAdminRoomById(input.roomId);
   if (!room) {
     throw new Error("Room not found");
@@ -1768,5 +1916,14 @@ export function createLecturerIssue(input: IssueInput): LecturerIssue {
   if (!issue) {
     throw new Error("Issue not found");
   }
+  await sendAndArchiveNotification(
+    getDatabase(),
+    DEMO_LECTURER_EMAIL,
+    buildIssueSubmittedEmail({
+      lecturerName: DEMO_LECTURER_NAME,
+      roomName: issue.roomName,
+      title: issue.title,
+    }),
+  );
   return issue;
 }

@@ -9,7 +9,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const { id } = await context.params;
     const body = await request.json();
-    return json(updateAdminIssueStatus(id, body.status, body.note));
+    return json(await updateAdminIssueStatus(id, body.status, body.note));
   } catch (error) {
     return errorResponse(error);
   }
