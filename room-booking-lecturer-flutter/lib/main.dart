@@ -332,6 +332,58 @@ Future<void> loadSharedData() async {
     );
 }
 
+Future<void> submitLecturerAccountRequest({
+  required String name,
+  required String department,
+  required String position,
+  required String gmail,
+  required String idNumber,
+}) async {
+  await apiRequest(
+    '/api/lecturer/account-requests',
+    method: 'POST',
+    body: {
+      'name': name,
+      'department': department,
+      'position': position,
+      'gmail': gmail,
+      'idNumber': idNumber,
+    },
+  );
+}
+
+Future<Map<String, dynamic>> loginLecturerAccount({
+  required String identifier,
+  required String password,
+}) async {
+  final response = await apiRequest(
+    '/api/lecturer/auth/login',
+    method: 'POST',
+    body: {'identifier': identifier, 'password': password},
+  );
+  return response as Map<String, dynamic>;
+}
+
+Future<Map<String, dynamic>> changeLecturerAccountPassword({
+  required String identifier,
+  required String currentPassword,
+  required String nextPassword,
+}) async {
+  final response = await apiRequest(
+    '/api/lecturer/auth/change-password',
+    method: 'POST',
+    body: {
+      'identifier': identifier,
+      'currentPassword': currentPassword,
+      'nextPassword': nextPassword,
+    },
+  );
+  return response as Map<String, dynamic>;
+}
+
+String currentLecturerIdentifier = 'lecturer@eng.ruh.ac.lk';
+String currentLecturerName = 'Demo Lecturer';
+
 final rooms = <Room>[
   const Room(
     id: 'room-1',
@@ -527,18 +579,26 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void signIn() {
+  Future<void> signIn() async {
     final email = emailController.text.trim();
     final password = passwordController.text;
-    if (email == 'lecturer@eng.ruh.ac.lk' && password == 'Lecturer@123') {
+    try {
+      final account = await loginLecturerAccount(
+        identifier: email,
+        password: password,
+      );
+      currentLecturerIdentifier = account['gmail'] as String? ?? email;
+      currentLecturerName = account['name'] as String? ?? 'Lecturer';
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const LecturerHome()),
       );
-      return;
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Use the demo lecturer credentials.')),
-    );
   }
 
   @override
@@ -631,7 +691,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: double.infinity,
                     height: 54,
                     child: FilledButton.icon(
-                      onPressed: signIn,
+                      onPressed: () => signIn(),
                       icon: const Icon(Icons.arrow_forward_rounded),
                       label: const Text('Sign In'),
                     ),
@@ -645,10 +705,165 @@ class _LoginScreenState extends State<LoginScreen> {
                     icon: const Icon(Icons.info_outline),
                     label: const Text('Auto-fill demo credentials'),
                   ),
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AccountRequestScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('Create lecturer account'),
+                  ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class AccountRequestScreen extends StatefulWidget {
+  const AccountRequestScreen({super.key});
+
+  @override
+  State<AccountRequestScreen> createState() => _AccountRequestScreenState();
+}
+
+class _AccountRequestScreenState extends State<AccountRequestScreen> {
+  final formKey = GlobalKey<FormState>();
+  final nameController = TextEditingController();
+  final departmentController = TextEditingController();
+  final positionController = TextEditingController();
+  final gmailController = TextEditingController();
+  final idNumberController = TextEditingController();
+  bool submitting = false;
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    departmentController.dispose();
+    positionController.dispose();
+    gmailController.dispose();
+    idNumberController.dispose();
+    super.dispose();
+  }
+
+  Future<void> submit() async {
+    if (!(formKey.currentState?.validate() ?? false)) return;
+    setState(() => submitting = true);
+    try {
+      await submitLecturerAccountRequest(
+        name: nameController.text.trim(),
+        department: departmentController.text.trim(),
+        position: positionController.text.trim(),
+        gmail: gmailController.text.trim(),
+        idNumber: idNumberController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account request sent to admin.')),
+      );
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => submitting = false);
+    }
+  }
+
+  String? requiredField(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Required';
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create Account')),
+      body: SafeArea(
+        child: Form(
+          key: formKey,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              const HeroPanel(
+                title: 'Lecturer account request',
+                subtitle:
+                    'Fill your details and send them to admin for approval.',
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: nameController,
+                validator: requiredField,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.person_outline),
+                  labelText: 'Full name',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: departmentController,
+                validator: requiredField,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.apartment_outlined),
+                  labelText: 'Department',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: positionController,
+                validator: requiredField,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.work_outline),
+                  labelText: 'Position',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: gmailController,
+                validator: (value) {
+                  final required = requiredField(value);
+                  if (required != null) return required;
+                  return value!.trim().toLowerCase().endsWith('@gmail.com')
+                      ? null
+                      : 'Use a Gmail address';
+                },
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.mail_outline),
+                  labelText: 'Gmail',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: idNumberController,
+                validator: requiredField,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.badge_outlined),
+                  labelText: 'ID number',
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                height: 54,
+                child: FilledButton.icon(
+                  onPressed: submitting ? null : submit,
+                  icon: const Icon(Icons.send_outlined),
+                  label: Text(submitting ? 'Sending...' : 'Send to admin'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1126,8 +1341,57 @@ class IssuesScreen extends StatelessWidget {
   }
 }
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final currentPasswordController = TextEditingController();
+  final nextPasswordController = TextEditingController();
+  bool submitting = false;
+
+  @override
+  void dispose() {
+    currentPasswordController.dispose();
+    nextPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> changePassword() async {
+    if (currentPasswordController.text.isEmpty ||
+        nextPasswordController.text.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter current password and an 8 character new password.'),
+        ),
+      );
+      return;
+    }
+    setState(() => submitting = true);
+    try {
+      await changeLecturerAccountPassword(
+        identifier: currentLecturerIdentifier,
+        currentPassword: currentPasswordController.text,
+        nextPassword: nextPasswordController.text,
+      );
+      if (!mounted) return;
+      currentPasswordController.clear();
+      nextPasswordController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1140,9 +1404,9 @@ class ProfileScreen extends StatelessWidget {
             color: brandPrimary,
             borderRadius: BorderRadius.circular(24),
           ),
-          child: const Column(
+          child: Column(
             children: [
-              CircleAvatar(
+              const CircleAvatar(
                 radius: 42,
                 backgroundColor: Colors.white24,
                 child: Text(
@@ -1154,39 +1418,76 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              SizedBox(height: 14),
+              const SizedBox(height: 14),
               Text(
-                'Demo Lecturer',
-                style: TextStyle(
+                currentLecturerName,
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 24,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              SizedBox(height: 6),
-              Text('Faculty Lecturer', style: TextStyle(color: Colors.white70)),
+              const SizedBox(height: 6),
+              const Text(
+                'Faculty Lecturer',
+                style: TextStyle(color: Colors.white70),
+              ),
             ],
           ),
         ),
-        const InfoRow(
+        InfoRow(
           icon: Icons.mail_outline,
-          label: 'Email',
-          value: 'lecturer@eng.ruh.ac.lk',
+          label: 'Gmail / Username',
+          value: currentLecturerIdentifier,
         ),
         const InfoRow(
           icon: Icons.business_outlined,
           label: 'Department',
-          value: 'Computer Engineering',
-        ),
-        const InfoRow(
-          icon: Icons.phone_outlined,
-          label: 'Phone',
-          value: '+94 77 000 0000',
+          value: 'Stored in admin account record',
         ),
         const InfoRow(
           icon: Icons.verified_user_outlined,
           label: 'Role',
           value: 'Lecturer',
+        ),
+        CardPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Change Password',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: currentPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.lock_outline),
+                  labelText: 'Current password',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: nextPasswordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.key_outlined),
+                  labelText: 'New password',
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: FilledButton.icon(
+                  onPressed: submitting ? null : changePassword,
+                  icon: const Icon(Icons.save_outlined),
+                  label: Text(submitting ? 'Changing...' : 'Change password'),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
