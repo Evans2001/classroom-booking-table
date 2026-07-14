@@ -1,15 +1,51 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
-void main() {
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp();
+  } catch (_) {
+    // Firebase is configured by google-services.json in Android builds.
+  }
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializePushNotifications();
   runApp(const LecturerBookingApp());
 }
 
 const brandPrimary = Color(0xFF5C2C30);
 const brandAccent = Color(0xFFEAB308);
 const appBg = Color(0xFFF8FAFC);
+final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+bool pushNotificationsReady = false;
+bool pushTokenRefreshListenerAttached = false;
+
+Future<void> initializePushNotifications() async {
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    await FirebaseMessaging.instance.requestPermission();
+    FirebaseMessaging.onMessage.listen((message) {
+      final notification = message.notification;
+      final title = notification?.title ?? 'Room booking update';
+      final body =
+          notification?.body ?? 'Open the app to view the latest update.';
+      scaffoldMessengerKey.currentState?.showSnackBar(
+        SnackBar(content: Text('$title\n$body')),
+      );
+    });
+    pushNotificationsReady = true;
+  } catch (error) {
+    debugPrint('Push notifications are not configured yet: $error');
+  }
+}
 
 class LecturerBookingApp extends StatelessWidget {
   const LecturerBookingApp({super.key});
@@ -19,6 +55,7 @@ class LecturerBookingApp extends StatelessWidget {
     return MaterialApp(
       title: 'Room Booking Lecturer',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -381,6 +418,47 @@ Future<Map<String, dynamic>> changeLecturerAccountPassword({
   return response as Map<String, dynamic>;
 }
 
+Future<void> registerCurrentLecturerPushToken() async {
+  if (!pushNotificationsReady) {
+    return;
+  }
+  try {
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token == null) {
+      return;
+    }
+    await apiRequest(
+      '/api/lecturer/push-token',
+      method: 'POST',
+      body: {
+        'lecturerEmail': currentLecturerIdentifier,
+        'token': token,
+        'platform': Platform.operatingSystem,
+      },
+    );
+    if (!pushTokenRefreshListenerAttached) {
+      pushTokenRefreshListenerAttached = true;
+      FirebaseMessaging.instance.onTokenRefresh.listen((nextToken) async {
+        try {
+          await apiRequest(
+            '/api/lecturer/push-token',
+            method: 'POST',
+            body: {
+              'lecturerEmail': currentLecturerIdentifier,
+              'token': nextToken,
+              'platform': Platform.operatingSystem,
+            },
+          );
+        } catch (error) {
+          debugPrint('Push token refresh registration failed: $error');
+        }
+      });
+    }
+  } catch (error) {
+    debugPrint('Push token registration failed: $error');
+  }
+}
+
 String currentLecturerIdentifier = 'lecturer@eng.ruh.ac.lk';
 String currentLecturerName = 'Demo Lecturer';
 
@@ -589,6 +667,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       currentLecturerIdentifier = account['gmail'] as String? ?? email;
       currentLecturerName = account['name'] as String? ?? 'Lecturer';
+      await registerCurrentLecturerPushToken();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const LecturerHome()),
@@ -596,7 +675,9 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     }
   }
@@ -772,7 +853,9 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     } finally {
       if (mounted) setState(() => submitting = false);
@@ -901,6 +984,7 @@ class _LecturerHomeState extends State<LecturerHome> {
   @override
   void initState() {
     super.initState();
+    registerCurrentLecturerPushToken();
     refreshData();
   }
 
@@ -1365,7 +1449,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         nextPasswordController.text.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enter current password and an 8 character new password.'),
+          content: Text(
+            'Enter current password and an 8 character new password.',
+          ),
         ),
       );
       return;
@@ -1386,7 +1472,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
       );
     } finally {
       if (mounted) setState(() => submitting = false);
