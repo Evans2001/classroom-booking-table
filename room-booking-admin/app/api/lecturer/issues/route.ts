@@ -12,7 +12,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    return json(createLecturerIssue(body), { status: 201 });
+    return json(await createLecturerIssue(body), { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }
