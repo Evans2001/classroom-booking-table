@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
 import type {
@@ -105,6 +105,45 @@ interface IssueInput {
   imageUrl?: string;
 }
 
+export type LecturerAccountRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface LecturerAccountRequestInput {
+  name: string;
+  department: string;
+  position: string;
+  gmail: string;
+  idNumber: string;
+}
+
+export interface LecturerAccountRequest {
+  id: string;
+  name: string;
+  department: string;
+  position: string;
+  gmail: string;
+  idNumber: string;
+  status: LecturerAccountRequestStatus;
+  submittedAt: string;
+  reviewedAt?: string;
+  reviewer?: string;
+  reviewerNote?: string;
+  generatedUsername?: string;
+}
+
+export interface LecturerAccount {
+  id: string;
+  requestId?: string;
+  name: string;
+  department: string;
+  position: string;
+  gmail: string;
+  idNumber: string;
+  username: string;
+  mustChangePassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface ImportedRow {
   requesterName: string;
   requesterEmail: string;
@@ -168,6 +207,36 @@ type IssueRow = {
   resolution_note: string | null;
   image_url: string | null;
   room_name: string;
+};
+
+type LecturerAccountRequestRow = {
+  id: string;
+  name: string;
+  department: string;
+  position: string;
+  gmail: string;
+  id_number: string;
+  status: LecturerAccountRequestStatus;
+  submitted_at: string;
+  reviewed_at: string | null;
+  reviewer: string | null;
+  reviewer_note: string | null;
+  generated_username: string | null;
+};
+
+type LecturerAccountRow = {
+  id: string;
+  request_id: string | null;
+  name: string;
+  department: string;
+  position: string;
+  gmail: string;
+  id_number: string;
+  username: string;
+  password_hash: string;
+  must_change_password: number;
+  created_at: string;
+  updated_at: string;
 };
 
 const seededRooms: CreateRoomInput[] = [
@@ -527,12 +596,139 @@ function getDatabase(): DatabaseSync {
         at TEXT NOT NULL,
         FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS lecturer_account_requests (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        department TEXT NOT NULL,
+        position TEXT NOT NULL,
+        gmail TEXT NOT NULL,
+        id_number TEXT NOT NULL,
+        status TEXT NOT NULL,
+        submitted_at TEXT NOT NULL,
+        reviewed_at TEXT,
+        reviewer TEXT,
+        reviewer_note TEXT,
+        generated_username TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS lecturer_accounts (
+        id TEXT PRIMARY KEY,
+        request_id TEXT,
+        name TEXT NOT NULL,
+        department TEXT NOT NULL,
+        position TEXT NOT NULL,
+        gmail TEXT NOT NULL UNIQUE,
+        id_number TEXT NOT NULL UNIQUE,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        must_change_password INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (request_id) REFERENCES lecturer_account_requests(id) ON DELETE SET NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS email_outbox (
+        id TEXT PRIMARY KEY,
+        recipient TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        sent_at TEXT NOT NULL
+      );
     `);
     seedIfNeeded(database);
+    ensureDefaultAccounts(database);
     globalThis.__roomBookingDatabase__ = database;
   }
 
   return globalThis.__roomBookingDatabase__;
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  const [salt, hash] = storedHash.split(":");
+  if (!salt || !hash) {
+    return false;
+  }
+  const storedBuffer = Buffer.from(hash, "hex");
+  const suppliedBuffer = scryptSync(password, salt, 64);
+  return storedBuffer.length === suppliedBuffer.length && timingSafeEqual(storedBuffer, suppliedBuffer);
+}
+
+function generateTemporaryPassword(): string {
+  return `Lecturer-${randomBytes(4).toString("hex")}`;
+}
+
+function generateUsername(name: string, idNumber: string): string {
+  const namePart = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.+|\.+$/g, "")
+    .slice(0, 24) || "lecturer";
+  const idPart = idNumber.trim().replace(/[^a-zA-Z0-9]+/g, "").slice(-4).toLowerCase();
+  return `${namePart}${idPart ? `.${idPart}` : ""}`;
+}
+
+function uniqueUsername(database: DatabaseSync, name: string, idNumber: string): string {
+  const base = generateUsername(name, idNumber);
+  let candidate = base;
+  let suffix = 2;
+  while (database.prepare("SELECT id FROM lecturer_accounts WHERE username = ?").get(candidate)) {
+    candidate = `${base}.${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function insertEmail(database: DatabaseSync, recipient: string, subject: string, body: string): void {
+  const now = new Date().toISOString();
+  database
+    .prepare("INSERT INTO email_outbox (id, recipient, subject, body, created_at, sent_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(`mail-${randomUUID()}`, recipient, subject, body, now, now);
+}
+
+function ensureDefaultAccounts(database: DatabaseSync) {
+  const existing = database
+    .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ?")
+    .get(DEMO_LECTURER_EMAIL) as { id: string } | undefined;
+  if (existing) {
+    return;
+  }
+  const now = new Date().toISOString();
+  database
+    .prepare(
+      `
+        INSERT INTO lecturer_accounts (
+          id, request_id, name, department, position, gmail, id_number, username, password_hash,
+          must_change_password, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      "lecturer-demo",
+      null,
+      DEMO_LECTURER_NAME,
+      DEMO_LECTURER_DEPARTMENT,
+      "Lecturer",
+      DEMO_LECTURER_EMAIL,
+      "DEMO-001",
+      DEMO_LECTURER_EMAIL,
+      hashPassword("Lecturer@123"),
+      0,
+      now,
+      now,
+    );
 }
 
 function seedIfNeeded(database: DatabaseSync) {
@@ -777,6 +973,39 @@ function mapIssueRowToLecturerIssue(row: IssueRow, updates: LecturerIssueUpdate[
     imageUrl: row.image_url ?? undefined,
     createdAt: row.reported_at,
     updates,
+  };
+}
+
+function mapLecturerAccountRequestRow(row: LecturerAccountRequestRow): LecturerAccountRequest {
+  return {
+    id: row.id,
+    name: row.name,
+    department: row.department,
+    position: row.position,
+    gmail: row.gmail,
+    idNumber: row.id_number,
+    status: row.status,
+    submittedAt: row.submitted_at,
+    reviewedAt: row.reviewed_at ?? undefined,
+    reviewer: row.reviewer ?? undefined,
+    reviewerNote: row.reviewer_note ?? undefined,
+    generatedUsername: row.generated_username ?? undefined,
+  };
+}
+
+function mapLecturerAccountRow(row: LecturerAccountRow): LecturerAccount {
+  return {
+    id: row.id,
+    requestId: row.request_id ?? undefined,
+    name: row.name,
+    department: row.department,
+    position: row.position,
+    gmail: row.gmail,
+    idNumber: row.id_number,
+    username: row.username,
+    mustChangePassword: Boolean(row.must_change_password),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -1147,6 +1376,185 @@ export function countAdminIssuesByStatus(status: IssueStatus): number {
     .prepare("SELECT COUNT(*) as count FROM issues WHERE status = ?")
     .get(status) as { count: number };
   return row.count;
+}
+
+function validateLecturerAccountRequestInput(input: LecturerAccountRequestInput): LecturerAccountRequestInput {
+  const normalized = {
+    name: input.name?.trim(),
+    department: input.department?.trim(),
+    position: input.position?.trim(),
+    gmail: normalizeEmail(input.gmail ?? ""),
+    idNumber: input.idNumber?.trim(),
+  };
+  if (!normalized.name || !normalized.department || !normalized.position || !normalized.gmail || !normalized.idNumber) {
+    throw new Error("Please fill all required lecturer details.");
+  }
+  if (!/^[^\s@]+@gmail\.com$/i.test(normalized.gmail)) {
+    throw new Error("Please enter a valid Gmail address.");
+  }
+  return normalized;
+}
+
+export function createLecturerAccountRequest(input: LecturerAccountRequestInput): LecturerAccountRequest {
+  const database = getDatabase();
+  const normalized = validateLecturerAccountRequestInput(input);
+  const existingAccount = database
+    .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ? OR id_number = ?")
+    .get(normalized.gmail, normalized.idNumber) as { id: string } | undefined;
+  if (existingAccount) {
+    throw new Error("A lecturer account already exists for this Gmail or ID number.");
+  }
+  const existingPending = database
+    .prepare(
+      "SELECT id FROM lecturer_account_requests WHERE status = 'PENDING' AND (gmail = ? OR id_number = ?)",
+    )
+    .get(normalized.gmail, normalized.idNumber) as { id: string } | undefined;
+  if (existingPending) {
+    throw new Error("An account request is already waiting for admin review.");
+  }
+
+  const id = `acct-req-${randomUUID()}`;
+  const submittedAt = new Date().toISOString();
+  database
+    .prepare(
+      `
+        INSERT INTO lecturer_account_requests (
+          id, name, department, position, gmail, id_number, status, submitted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      id,
+      normalized.name,
+      normalized.department,
+      normalized.position,
+      normalized.gmail,
+      normalized.idNumber,
+      "PENDING",
+      submittedAt,
+    );
+  const created = database
+    .prepare("SELECT * FROM lecturer_account_requests WHERE id = ?")
+    .get(id) as LecturerAccountRequestRow;
+  return mapLecturerAccountRequestRow(created);
+}
+
+export function listLecturerAccountRequests(status?: LecturerAccountRequestStatus | "ALL"): LecturerAccountRequest[] {
+  const rows =
+    status && status !== "ALL"
+      ? (getDatabase()
+          .prepare("SELECT * FROM lecturer_account_requests WHERE status = ? ORDER BY submitted_at DESC")
+          .all(status) as LecturerAccountRequestRow[])
+      : (getDatabase()
+          .prepare("SELECT * FROM lecturer_account_requests ORDER BY submitted_at DESC")
+          .all() as LecturerAccountRequestRow[]);
+  return rows.map(mapLecturerAccountRequestRow);
+}
+
+export function decideLecturerAccountRequest(
+  id: string,
+  decision: "APPROVED" | "REJECTED",
+  note?: string,
+): LecturerAccountRequest {
+  const database = getDatabase();
+  const current = database
+    .prepare("SELECT * FROM lecturer_account_requests WHERE id = ?")
+    .get(id) as LecturerAccountRequestRow | undefined;
+  if (!current) {
+    throw new Error("Account request not found");
+  }
+  if (current.status !== "PENDING") {
+    throw new Error("Only pending account requests can be reviewed");
+  }
+  if (decision === "REJECTED" && !note?.trim()) {
+    throw new Error("Rejection note is required");
+  }
+
+  const reviewedAt = new Date().toISOString();
+  let username: string | null = null;
+  let reviewNote = note?.trim() || "Reviewed";
+  if (decision === "APPROVED") {
+    const duplicate = database
+      .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ? OR id_number = ?")
+      .get(current.gmail, current.id_number) as { id: string } | undefined;
+    if (duplicate) {
+      throw new Error("A lecturer account already exists for this Gmail or ID number.");
+    }
+    username = uniqueUsername(database, current.name, current.id_number);
+    const temporaryPassword = generateTemporaryPassword();
+    database
+      .prepare(
+        `
+          INSERT INTO lecturer_accounts (
+            id, request_id, name, department, position, gmail, id_number, username, password_hash,
+            must_change_password, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        `lecturer-${randomUUID()}`,
+        current.id,
+        current.name,
+        current.department,
+        current.position,
+        current.gmail,
+        current.id_number,
+        username,
+        hashPassword(temporaryPassword),
+        1,
+        reviewedAt,
+        reviewedAt,
+      );
+    insertEmail(
+      database,
+      current.gmail,
+      "Your classroom booking lecturer account",
+      `Hello ${current.name},\n\nYour lecturer account has been created.\n\nUsername: ${username}\nTemporary password: ${temporaryPassword}\n\nPlease sign in and change your password immediately.`,
+    );
+    reviewNote = note?.trim() || "Account created and credentials sent to lecturer Gmail.";
+  }
+
+  database
+    .prepare(
+      `
+        UPDATE lecturer_account_requests
+        SET status = ?, reviewed_at = ?, reviewer = ?, reviewer_note = ?, generated_username = ?
+        WHERE id = ?
+      `,
+    )
+    .run(decision, reviewedAt, DEMO_ADMIN_NAME, reviewNote, username, id);
+  const updated = database
+    .prepare("SELECT * FROM lecturer_account_requests WHERE id = ?")
+    .get(id) as LecturerAccountRequestRow;
+  return mapLecturerAccountRequestRow(updated);
+}
+
+export function authenticateLecturerAccount(identifier: string, password: string): LecturerAccount {
+  const normalized = normalizeEmail(identifier);
+  const row = getDatabase()
+    .prepare("SELECT * FROM lecturer_accounts WHERE gmail = ? OR username = ?")
+    .get(normalized, identifier.trim()) as LecturerAccountRow | undefined;
+  if (!row || !verifyPassword(password, row.password_hash)) {
+    throw new Error("Invalid lecturer credentials.");
+  }
+  return mapLecturerAccountRow(row);
+}
+
+export function changeLecturerPassword(identifier: string, currentPassword: string, nextPassword: string): LecturerAccount {
+  if (nextPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters.");
+  }
+  const account = authenticateLecturerAccount(identifier, currentPassword);
+  const now = new Date().toISOString();
+  getDatabase()
+    .prepare(
+      "UPDATE lecturer_accounts SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
+    )
+    .run(hashPassword(nextPassword), now, account.id);
+  const row = getDatabase()
+    .prepare("SELECT * FROM lecturer_accounts WHERE id = ?")
+    .get(account.id) as LecturerAccountRow;
+  return mapLecturerAccountRow(row);
 }
 
 export function listLecturerRooms(): LecturerRoom[] {
