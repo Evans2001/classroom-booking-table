@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "960026436000",
+    "project_id": "classroombooking-b9fcc",
+    "storage_bucket": "classroombooking-b9fcc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:960026436000:android:99d058fbf6f5d7fa4284c5",
+        "android_client_info": {
+          "package_name": "com.example.room_booking_lecturer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3lyQWqHhmFFpTww30FqmBBEhmhFnDdwg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
