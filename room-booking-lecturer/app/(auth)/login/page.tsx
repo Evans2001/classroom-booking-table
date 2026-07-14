@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Mail, Lock, ArrowRight, Info } from "lucide-react";
@@ -15,6 +16,7 @@ import {
   DEMO_USER_EMAIL,
   DEMO_USER_PASSWORD,
 } from "@/lib/utils/constants";
+import { loginLecturer } from "@/lib/services/account.service";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -27,18 +29,16 @@ export default function LoginPage() {
     event.preventDefault();
     setSubmitting(true);
     try {
-      // Simulate network delay for effect
-      await new Promise(resolve => setTimeout(resolve, 600));
-      
-      const valid = email.trim() === DEMO_USER_EMAIL && password === DEMO_USER_PASSWORD;
-      if (!valid) {
-        showToast("Invalid credentials", "Please use the demo credentials provided.", "error");
-        return;
-      }
+      const account = await loginLecturer(email.trim(), password);
       document.cookie = `${AUTH_COOKIE_NAME}=${AUTH_COOKIE_VALUE}; path=/; max-age=${AUTH_MAX_AGE_SECONDS}`;
+      sessionStorage.setItem("lecturer_account_identifier", account.gmail);
+      sessionStorage.setItem("lecturer_account_name", account.name);
       showToast("Welcome Back!", "Signed in successfully.", "success");
-      router.push("/lecturer/dashboard");
+      router.push(account.mustChangePassword ? "/lecturer/profile?changePassword=1" : "/lecturer/dashboard");
       router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Please check your username and password.";
+      showToast("Invalid credentials", message, "error");
     } finally {
       setSubmitting(false);
     }
@@ -112,6 +112,12 @@ export default function LoginPage() {
             {!submitting && <ArrowRight className="ml-2 h-5 w-5" />}
           </Button>
         </form>
+
+        <div className="mt-5 text-center">
+          <Link href="/register" className="text-sm font-bold text-brand-primary hover:underline">
+            Create lecturer account
+          </Link>
+        </div>
 
         {/* Demo Credentials Helper */}
         <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
