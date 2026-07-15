@@ -26,4 +26,5 @@ export interface LecturerAccount {
   idNumber: string;
   username: string;
   mustChangePassword: boolean;
+  sessionToken?: string;
 }

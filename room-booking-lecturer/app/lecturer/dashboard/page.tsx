@@ -17,9 +17,12 @@ export default function LecturerDashboardPage() {
   const [bookingsCount, setBookingsCount] = useState(0);
   const [issuesCount, setIssuesCount] = useState(0);
   const [recentBookings, setRecentBookings] = useState<Booking[]>([]);
+  const [lecturerName, setLecturerName] = useState("Lecturer");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    setLecturerName(sessionStorage.getItem("lecturer_account_name") ?? "Lecturer");
+
     async function loadData() {
       try {
         const [rooms, bookings, issues] = await Promise.all([
@@ -50,7 +53,7 @@ export default function LecturerDashboardPage() {
         
         <div className="relative z-10 space-y-4">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">Hello, Demo Lecturer 👋</h2>
+            <h2 className="text-2xl font-bold tracking-tight">Hello, {lecturerName}</h2>
             <p className="mt-1 text-sm font-medium text-white/80">Manage your spaces and report issues seamlessly.</p>
           </div>
           
