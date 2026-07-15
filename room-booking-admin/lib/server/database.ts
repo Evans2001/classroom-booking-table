@@ -93,6 +93,13 @@ interface LecturerIssue {
   updates: LecturerIssueUpdate[];
 }
 
+interface LecturerIdentity {
+  name: string;
+  email: string;
+  department: string;
+  sessionToken?: string;
+}
+
 interface BookingAvailabilityInput {
   roomId: string;
   startAt: string;
@@ -154,6 +161,7 @@ export interface LecturerAccount {
   mustChangePassword: boolean;
   createdAt: string;
   updatedAt: string;
+  sessionToken?: string;
 }
 
 interface ImportedRow {
@@ -640,6 +648,14 @@ function getDatabase(): DatabaseSync {
         FOREIGN KEY (request_id) REFERENCES lecturer_account_requests(id) ON DELETE SET NULL
       );
 
+      CREATE TABLE IF NOT EXISTS lecturer_sessions (
+        token TEXT PRIMARY KEY,
+        lecturer_account_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY (lecturer_account_id) REFERENCES lecturer_accounts(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS email_outbox (
         id TEXT PRIMARY KEY,
         recipient TEXT NOT NULL,
@@ -663,7 +679,20 @@ function getDatabase(): DatabaseSync {
     globalThis.__roomBookingDatabase__ = database;
   }
 
+  ensureSessionTable(globalThis.__roomBookingDatabase__);
   return globalThis.__roomBookingDatabase__;
+}
+
+function ensureSessionTable(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS lecturer_sessions (
+      token TEXT PRIMARY KEY,
+      lecturer_account_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY (lecturer_account_id) REFERENCES lecturer_accounts(id) ON DELETE CASCADE
+    );
+  `);
 }
 
 function normalizeEmail(value: string): string {
@@ -688,6 +717,18 @@ function verifyPassword(password: string, storedHash: string): boolean {
 
 function generateTemporaryPassword(): string {
   return `Lecturer-${randomBytes(4).toString("hex")}`;
+}
+
+function createLecturerSession(database: DatabaseSync, accountId: string): string {
+  const token = randomBytes(32).toString("hex");
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
+  database
+    .prepare(
+      "INSERT INTO lecturer_sessions (token, lecturer_account_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+    )
+    .run(token, accountId, now.toISOString(), expiresAt.toISOString());
+  return token;
 }
 
 function generateUsername(name: string, idNumber: string): string {
@@ -717,6 +758,35 @@ function insertEmail(database: DatabaseSync, recipient: string, subject: string,
   database
     .prepare("INSERT INTO email_outbox (id, recipient, subject, body, created_at, sent_at) VALUES (?, ?, ?, ?, ?, ?)")
     .run(`mail-${randomUUID()}`, recipient, subject, body, now, now);
+}
+
+function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): LecturerIdentity {
+  const sessionToken = identity?.sessionToken?.trim();
+  if (sessionToken) {
+    const row = getDatabase()
+      .prepare(
+        `
+          SELECT a.*
+          FROM lecturer_sessions s
+          JOIN lecturer_accounts a ON a.id = s.lecturer_account_id
+          WHERE s.token = ? AND s.expires_at > ?
+        `,
+      )
+      .get(sessionToken, new Date().toISOString()) as LecturerAccountRow | undefined;
+
+    if (!row) {
+      throw new Error("Invalid lecturer session.");
+    }
+
+    return {
+      name: row.name,
+      email: row.gmail,
+      department: row.department,
+      sessionToken,
+    };
+  }
+
+  throw new Error("Lecturer login required.");
 }
 
 async function sendAndArchiveNotification(
@@ -1646,14 +1716,18 @@ export async function decideLecturerAccountRequest(
 }
 
 export function authenticateLecturerAccount(identifier: string, password: string): LecturerAccount {
+  const database = getDatabase();
   const normalized = normalizeEmail(identifier);
-  const row = getDatabase()
+  const row = database
     .prepare("SELECT * FROM lecturer_accounts WHERE gmail = ? OR username = ?")
     .get(normalized, identifier.trim()) as LecturerAccountRow | undefined;
   if (!row || !verifyPassword(password, row.password_hash)) {
     throw new Error("Invalid lecturer credentials.");
   }
-  return mapLecturerAccountRow(row);
+  return {
+    ...mapLecturerAccountRow(row),
+    sessionToken: createLecturerSession(database, row.id),
+  };
 }
 
 export function changeLecturerPassword(identifier: string, currentPassword: string, nextPassword: string): LecturerAccount {
@@ -1677,8 +1751,11 @@ export function registerLecturerPushToken(input: {
   lecturerEmail: string;
   token: string;
   platform?: string;
+  sessionToken?: string;
 }): void {
-  const lecturerEmail = normalizeEmail(input.lecturerEmail ?? "");
+  const lecturerEmail = input.sessionToken
+    ? resolveLecturerIdentity({ sessionToken: input.sessionToken }).email
+    : normalizeEmail(input.lecturerEmail ?? "");
   const token = input.token?.trim();
   const platform = input.platform?.trim() || "android";
   if (!lecturerEmail || !token) {
@@ -1719,15 +1796,17 @@ export function getLecturerRoomById(id: string): LecturerRoom | undefined {
   return room ? adminRoomToLecturerRoom(room) : undefined;
 }
 
-export function listLecturerBookings(): LecturerBooking[] {
+export function listLecturerBookings(identity?: Partial<LecturerIdentity>): LecturerBooking[] {
+  const lecturer = resolveLecturerIdentity(identity);
   return listBookingRows(
     "WHERE b.requester_email = ? ORDER BY b.submitted_at DESC",
-    [DEMO_LECTURER_EMAIL],
+    [lecturer.email],
   ).map(mapBookingRowToLecturerBooking);
 }
 
-export function getLecturerBookingById(id: string): LecturerBooking | undefined {
-  const row = listBookingRows("WHERE b.id = ? AND b.requester_email = ?", [id, DEMO_LECTURER_EMAIL])[0];
+export function getLecturerBookingById(id: string, identity?: Partial<LecturerIdentity>): LecturerBooking | undefined {
+  const lecturer = resolveLecturerIdentity(identity);
+  const row = listBookingRows("WHERE b.id = ? AND b.requester_email = ?", [id, lecturer.email])[0];
   return row ? mapBookingRowToLecturerBooking(row) : undefined;
 }
 
@@ -1758,7 +1837,8 @@ export function checkLecturerRoomAvailability(input: BookingAvailabilityInput): 
   return { available: true, message: "Room is available for this period." };
 }
 
-export async function createLecturerBooking(input: BookingInput): Promise<LecturerBooking> {
+export async function createLecturerBooking(input: BookingInput, identity?: Partial<LecturerIdentity>): Promise<LecturerBooking> {
+  const lecturer = resolveLecturerIdentity(identity);
   assertValidBookingInput(input);
   const availability = checkLecturerRoomAvailability(input);
   if (!availability.available) {
@@ -1781,9 +1861,9 @@ export async function createLecturerBooking(input: BookingInput): Promise<Lectur
     )
     .run(
       id,
-      DEMO_LECTURER_NAME,
-      DEMO_LECTURER_EMAIL,
-      DEMO_LECTURER_DEPARTMENT,
+      lecturer.name,
+      lecturer.email,
+      lecturer.department,
       input.roomId,
       input.moduleName,
       input.purpose,
@@ -1795,13 +1875,13 @@ export async function createLecturerBooking(input: BookingInput): Promise<Lectur
       null,
       "lecturer",
     );
-  const booking = getLecturerBookingById(id);
+  const booking = getLecturerBookingById(id, lecturer);
   if (!booking) {
     throw new Error("Booking not found");
   }
   await sendAndArchiveNotification(
     getDatabase(),
-    DEMO_LECTURER_EMAIL,
+    lecturer.email,
     buildBookingSubmittedEmail({
       lecturerName: booking.requesterName,
       roomName: booking.roomName,
@@ -1814,8 +1894,9 @@ export async function createLecturerBooking(input: BookingInput): Promise<Lectur
   return booking;
 }
 
-export function updateLecturerBooking(id: string, input: BookingInput): LecturerBooking {
-  const current = getLecturerBookingById(id);
+export function updateLecturerBooking(id: string, input: BookingInput, identity?: Partial<LecturerIdentity>): LecturerBooking {
+  const lecturer = resolveLecturerIdentity(identity);
+  const current = getLecturerBookingById(id, lecturer);
   if (!current) {
     throw new Error("Booking not found");
   }
@@ -1846,25 +1927,27 @@ export function updateLecturerBooking(id: string, input: BookingInput): Lecturer
       "PENDING",
       new Date().toISOString(),
       id,
-      DEMO_LECTURER_EMAIL,
+      lecturer.email,
     );
-  const booking = getLecturerBookingById(id);
+  const booking = getLecturerBookingById(id, lecturer);
   if (!booking) {
     throw new Error("Booking not found");
   }
   return booking;
 }
 
-export function deleteLecturerBooking(id: string): void {
+export function deleteLecturerBooking(id: string, identity?: Partial<LecturerIdentity>): void {
+  const lecturer = resolveLecturerIdentity(identity);
   const result = getDatabase()
     .prepare("DELETE FROM booking_requests WHERE id = ? AND requester_email = ?")
-    .run(id, DEMO_LECTURER_EMAIL);
+    .run(id, lecturer.email);
   if (result.changes === 0) {
     throw new Error("Booking not found");
   }
 }
 
-export function listLecturerIssues(): LecturerIssue[] {
+export function listLecturerIssues(identity?: Partial<LecturerIdentity>): LecturerIssue[] {
+  const lecturer = resolveLecturerIdentity(identity);
   const rows = getDatabase()
     .prepare(
       `
@@ -1875,11 +1958,12 @@ export function listLecturerIssues(): LecturerIssue[] {
         ORDER BY i.reported_at DESC
       `,
     )
-    .all(DEMO_LECTURER_NAME) as IssueRow[];
+    .all(lecturer.name) as IssueRow[];
   return rows.map((row) => mapIssueRowToLecturerIssue(row, getIssueUpdates(row.id)));
 }
 
-export function getLecturerIssueById(id: string): LecturerIssue | undefined {
+export function getLecturerIssueById(id: string, identity?: Partial<LecturerIdentity>): LecturerIssue | undefined {
+  const lecturer = resolveLecturerIdentity(identity);
   const row = getDatabase()
     .prepare(
       `
@@ -1889,11 +1973,12 @@ export function getLecturerIssueById(id: string): LecturerIssue | undefined {
         WHERE i.id = ? AND i.reported_by = ?
       `,
     )
-    .get(id, DEMO_LECTURER_NAME) as IssueRow | undefined;
+    .get(id, lecturer.name) as IssueRow | undefined;
   return row ? mapIssueRowToLecturerIssue(row, getIssueUpdates(id)) : undefined;
 }
 
-export async function createLecturerIssue(input: IssueInput): Promise<LecturerIssue> {
+export async function createLecturerIssue(input: IssueInput, identity?: Partial<LecturerIdentity>): Promise<LecturerIssue> {
+  const lecturer = resolveLecturerIdentity(identity);
   const room = getAdminRoomById(input.roomId);
   if (!room) {
     throw new Error("Room not found");
@@ -1908,19 +1993,19 @@ export async function createLecturerIssue(input: IssueInput): Promise<LecturerIs
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
-    .run(id, input.roomId, input.title, input.description, input.severity, "OPEN", DEMO_LECTURER_NAME, createdAt, input.imageUrl ?? null);
+    .run(id, input.roomId, input.title, input.description, input.severity, "OPEN", lecturer.name, createdAt, input.imageUrl ?? null);
   getDatabase()
     .prepare("INSERT INTO issue_updates (id, issue_id, status, note, at) VALUES (?, ?, ?, ?, ?)")
     .run(randomUUID(), id, "OPEN", "Issue submitted from lecturer mobile app.", createdAt);
-  const issue = getLecturerIssueById(id);
+  const issue = getLecturerIssueById(id, lecturer);
   if (!issue) {
     throw new Error("Issue not found");
   }
   await sendAndArchiveNotification(
     getDatabase(),
-    DEMO_LECTURER_EMAIL,
+    lecturer.email,
     buildIssueSubmittedEmail({
-      lecturerName: DEMO_LECTURER_NAME,
+      lecturerName: lecturer.name,
       roomName: issue.roomName,
       title: issue.title,
     }),

@@ -222,6 +222,15 @@ Future<dynamic> apiRequest(
   final client = HttpClient();
   final request = await client.openUrl(method, Uri.parse('$apiBaseUrl$path'));
   request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+  if (currentLecturerSessionToken.isNotEmpty) {
+    request.headers.set(
+      HttpHeaders.authorizationHeader,
+      'Bearer $currentLecturerSessionToken',
+    );
+  }
+  request.headers.set('X-Lecturer-Email', currentLecturerIdentifier);
+  request.headers.set('X-Lecturer-Name', currentLecturerName);
+  request.headers.set('X-Lecturer-Department', currentLecturerDepartment);
   if (body != null) {
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     request.write(jsonEncode(body));
@@ -461,6 +470,8 @@ Future<void> registerCurrentLecturerPushToken() async {
 
 String currentLecturerIdentifier = 'lecturer@eng.ruh.ac.lk';
 String currentLecturerName = 'Demo Lecturer';
+String currentLecturerDepartment = 'Computer Science';
+String currentLecturerSessionToken = '';
 
 final rooms = <Room>[
   const Room(
@@ -513,131 +524,9 @@ final rooms = <Room>[
   ),
 ];
 
-final bookings = <Booking>[
-  Booking(
-    id: 'bk-1',
-    roomId: 'room-1',
-    roomName: 'Main Lecture Hall',
-    building: 'Engineering Block',
-    roomCode: 'LH-101',
-    moduleName: 'Software Engineering',
-    startAt: DateTime(2026, 6, 16, 9, 0),
-    endAt: DateTime(2026, 6, 16, 11, 0),
-    purpose: 'Department seminar',
-    attendees: 80,
-    status: BookingStatus.pending,
-    submittedAt: DateTime(2026, 6, 5, 13, 0),
-  ),
-  Booking(
-    id: 'bk-2',
-    roomId: 'room-3',
-    roomName: 'Board Meeting Room',
-    building: 'Admin Building',
-    roomCode: 'MR-305',
-    moduleName: 'Database Systems',
-    startAt: DateTime(2026, 6, 18, 13, 30),
-    endAt: DateTime(2026, 6, 18, 14, 30),
-    purpose: 'Project discussion',
-    attendees: 12,
-    status: BookingStatus.approved,
-    submittedAt: DateTime(2026, 6, 4, 17, 30),
-    reviewerNote: 'Approved',
-  ),
-  Booking(
-    id: 'bk-3',
-    roomId: 'room-2',
-    roomName: 'Computer Lab A',
-    building: 'Science Complex',
-    roomCode: 'LAB-204',
-    moduleName: 'Web Application Development',
-    startAt: DateTime(2026, 6, 20, 8, 30),
-    endAt: DateTime(2026, 6, 20, 9, 30),
-    purpose: 'Lab revision session',
-    attendees: 30,
-    status: BookingStatus.rejected,
-    submittedAt: DateTime(2026, 6, 3, 13, 45),
-    reviewerNote: 'Room unavailable due maintenance slot.',
-  ),
-  Booking(
-    id: 'bk-4',
-    roomId: 'room-1',
-    roomName: 'Main Lecture Hall',
-    building: 'Engineering Block',
-    roomCode: 'LH-101',
-    moduleName: 'Computer Networks',
-    startAt: DateTime(2026, 6, 24, 9, 30),
-    endAt: DateTime(2026, 6, 24, 11, 30),
-    purpose: 'Guest lecture',
-    attendees: 70,
-    status: BookingStatus.approved,
-    submittedAt: DateTime(2026, 6, 2, 16, 30),
-    reviewerNote: 'Approved and reserved.',
-  ),
-];
+final bookings = <Booking>[];
 
-final issues = <Issue>[
-  Issue(
-    id: 'is-1',
-    roomId: 'room-2',
-    roomName: 'Computer Lab A',
-    title: 'Projector not turning on',
-    description: 'Power light blinks but no display.',
-    severity: IssueSeverity.high,
-    status: IssueStatus.inProgress,
-    createdAt: DateTime(2026, 2, 26, 14, 0),
-    updates: [
-      IssueUpdate(
-        status: IssueStatus.open,
-        note: 'Issue reported by lecturer.',
-        at: DateTime(2026, 2, 26, 14, 0),
-      ),
-      IssueUpdate(
-        status: IssueStatus.inProgress,
-        note: 'Maintenance team assigned.',
-        at: DateTime(2026, 2, 27, 16, 30),
-      ),
-    ],
-  ),
-  Issue(
-    id: 'is-2',
-    roomId: 'room-1',
-    roomName: 'Main Lecture Hall',
-    title: 'Microphone echo issue',
-    description: 'Audio feedback starts when volume is above medium.',
-    severity: IssueSeverity.medium,
-    status: IssueStatus.open,
-    createdAt: DateTime(2026, 2, 28, 11, 30),
-    updates: [
-      IssueUpdate(
-        status: IssueStatus.open,
-        note: 'Issue reported by faculty.',
-        at: DateTime(2026, 2, 28, 11, 30),
-      ),
-    ],
-  ),
-  Issue(
-    id: 'is-3',
-    roomId: 'room-3',
-    roomName: 'Board Meeting Room',
-    title: 'Ceiling light flicker',
-    description: 'One light panel was flickering during meetings.',
-    severity: IssueSeverity.low,
-    status: IssueStatus.resolved,
-    createdAt: DateTime(2026, 1, 30, 11, 15),
-    updates: [
-      IssueUpdate(
-        status: IssueStatus.open,
-        note: 'Issue reported by lecturer.',
-        at: DateTime(2026, 1, 30, 11, 15),
-      ),
-      IssueUpdate(
-        status: IssueStatus.resolved,
-        note: 'Electrical maintenance completed.',
-        at: DateTime(2026, 2, 2, 14, 50),
-      ),
-    ],
-  ),
-];
+final issues = <Issue>[];
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -667,6 +556,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
       currentLecturerIdentifier = account['gmail'] as String? ?? email;
       currentLecturerName = account['name'] as String? ?? 'Lecturer';
+      currentLecturerDepartment =
+          account['department'] as String? ?? 'Faculty Department';
+      currentLecturerSessionToken = account['sessionToken'] as String? ?? '';
       await registerCurrentLecturerPushToken();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -998,7 +890,7 @@ class _LecturerHomeState extends State<LecturerHome> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Live data sync failed. Showing cached demo data.'),
+            content: Text('Live data sync failed. Showing cached data.'),
           ),
         );
       }
@@ -1156,7 +1048,7 @@ class DashboardScreen extends StatelessWidget {
     return AppScrollView(
       children: [
         HeroPanel(
-          title: 'Hello, Demo Lecturer',
+          title: 'Hello, $currentLecturerName',
           subtitle: 'Manage classroom bookings and report room issues.',
           actions: [
             Expanded(
@@ -1494,12 +1386,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           child: Column(
             children: [
-              const CircleAvatar(
+              CircleAvatar(
                 radius: 42,
                 backgroundColor: Colors.white24,
                 child: Text(
-                  'DL',
-                  style: TextStyle(
+                  lecturerInitials(currentLecturerName),
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 28,
                     fontWeight: FontWeight.w900,
@@ -1516,9 +1408,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                'Faculty Lecturer',
-                style: TextStyle(color: Colors.white70),
+              Text(
+                currentLecturerDepartment,
+                style: const TextStyle(color: Colors.white70),
               ),
             ],
           ),
@@ -1528,10 +1420,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           label: 'Gmail / Username',
           value: currentLecturerIdentifier,
         ),
-        const InfoRow(
+        InfoRow(
           icon: Icons.business_outlined,
           label: 'Department',
-          value: 'Stored in admin account record',
+          value: currentLecturerDepartment,
         ),
         const InfoRow(
           icon: Icons.verified_user_outlined,
@@ -2726,6 +2618,18 @@ String issueStatusLabel(IssueStatus status) => switch (status) {
   IssueStatus.resolved => 'Resolved',
   IssueStatus.closed => 'Closed',
 };
+
+String lecturerInitials(String name) {
+  final parts = name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return 'L';
+  final first = parts.first[0];
+  final second = parts.length > 1 ? parts.last[0] : '';
+  return '$first$second'.toUpperCase();
+}
 
 Color issueStatusColor(IssueStatus status) => switch (status) {
   IssueStatus.open => const Color(0xFFDC2626),

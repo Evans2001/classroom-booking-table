@@ -33,6 +33,12 @@ export default function LoginPage() {
       document.cookie = `${AUTH_COOKIE_NAME}=${AUTH_COOKIE_VALUE}; path=/; max-age=${AUTH_MAX_AGE_SECONDS}`;
       sessionStorage.setItem("lecturer_account_identifier", account.gmail);
       sessionStorage.setItem("lecturer_account_name", account.name);
+      sessionStorage.setItem("lecturer_account_department", account.department);
+      sessionStorage.setItem("lecturer_account_position", account.position);
+      sessionStorage.setItem("lecturer_account_id_number", account.idNumber);
+      if (account.sessionToken) {
+        sessionStorage.setItem("lecturer_session_token", account.sessionToken);
+      }
       showToast("Welcome Back!", "Signed in successfully.", "success");
       router.push(account.mustChangePassword ? "/lecturer/profile?changePassword=1" : "/lecturer/dashboard");
       router.refresh();
