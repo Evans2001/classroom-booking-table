@@ -14,6 +14,9 @@ export default function ProfilePage() {
   const searchParams = useSearchParams();
   const [identifier, setIdentifier] = useState("");
   const [name, setName] = useState("Lecturer");
+  const [department, setDepartment] = useState("Faculty Department");
+  const [position, setPosition] = useState("Lecturer");
+  const [idNumber, setIdNumber] = useState("Verified during admin approval");
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -22,7 +25,10 @@ export default function ProfilePage() {
 
   useEffect(() => {
     setIdentifier(sessionStorage.getItem("lecturer_account_identifier") ?? "lecturer@eng.ruh.ac.lk");
-    setName(sessionStorage.getItem("lecturer_account_name") ?? "Demo Lecturer");
+    setName(sessionStorage.getItem("lecturer_account_name") ?? "Lecturer");
+    setDepartment(sessionStorage.getItem("lecturer_account_department") ?? "Faculty Department");
+    setPosition(sessionStorage.getItem("lecturer_account_position") ?? "Lecturer");
+    setIdNumber(sessionStorage.getItem("lecturer_account_id_number") ?? "Verified during admin approval");
   }, []);
 
   const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
@@ -31,6 +37,13 @@ export default function ProfilePage() {
     try {
       const account = await changeLecturerPassword(identifier, currentPassword, nextPassword);
       sessionStorage.setItem("lecturer_account_name", account.name);
+      sessionStorage.setItem("lecturer_account_department", account.department);
+      sessionStorage.setItem("lecturer_account_position", account.position);
+      sessionStorage.setItem("lecturer_account_id_number", account.idNumber);
+      setName(account.name);
+      setDepartment(account.department);
+      setPosition(account.position);
+      setIdNumber(account.idNumber);
       showToast("Password changed", "You can use your new password next time you sign in.", "success");
       setCurrentPassword("");
       setNextPassword("");
@@ -68,9 +81,9 @@ export default function ProfilePage() {
           <div className="divide-y divide-slate-100">
             <InfoRow icon={<User className="h-5 w-5" />} label="Full Name" value={name} />
             <InfoRow icon={<Mail className="h-5 w-5" />} label="Gmail / Username" value={identifier} />
-            <InfoRow icon={<Building className="h-5 w-5" />} label="Department" value="Stored in admin account record" />
-            <InfoRow icon={<UserRoundCog className="h-5 w-5" />} label="Position" value="Lecturer" />
-            <InfoRow icon={<IdCard className="h-5 w-5" />} label="ID Number" value="Verified during admin approval" />
+            <InfoRow icon={<Building className="h-5 w-5" />} label="Department" value={department} />
+            <InfoRow icon={<UserRoundCog className="h-5 w-5" />} label="Position" value={position} />
+            <InfoRow icon={<IdCard className="h-5 w-5" />} label="ID Number" value={idNumber} />
           </div>
         </Card>
       </div>

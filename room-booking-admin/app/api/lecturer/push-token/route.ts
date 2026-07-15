@@ -7,6 +7,7 @@ export function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
+    const authorization = request.headers.get("authorization") ?? "";
     const body = (await request.json()) as {
       lecturerEmail?: string;
       token?: string;
@@ -16,6 +17,9 @@ export async function POST(request: Request) {
       lecturerEmail: body.lecturerEmail ?? "",
       token: body.token ?? "",
       platform: body.platform,
+      sessionToken: authorization.toLowerCase().startsWith("bearer ")
+        ? authorization.slice(7).trim()
+        : undefined,
     });
     return json({ registered: true });
   } catch (error) {
