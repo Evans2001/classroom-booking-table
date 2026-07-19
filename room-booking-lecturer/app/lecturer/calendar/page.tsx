@@ -7,7 +7,9 @@ import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Plus 
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { listMyBookings } from "@/lib/services/bookings.service";
+import { listMySemesterLectures } from "@/lib/services/timetable.service";
 import type { Booking } from "@/lib/types/booking";
+import type { LecturerTimetableEntry } from "@/lib/types/timetable";
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -38,14 +40,16 @@ function formatTimeRange(booking: Booking): string {
 
 export default function CalendarPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [semesterLectures, setSemesterLectures] = useState<LecturerTimetableEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfDay(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()));
 
   useEffect(() => {
     async function loadBookings() {
-      const data = await listMyBookings();
+      const [data, lectures] = await Promise.all([listMyBookings(), listMySemesterLectures()]);
       setBookings(data);
+      setSemesterLectures(lectures);
       setLoading(false);
     }
 
@@ -82,6 +86,9 @@ export default function CalendarPage() {
       (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
     );
   }, [bookingsByDate, selectedDate]);
+  const selectedLectures = useMemo(() => semesterLectures
+    .filter((lecture) => lecture.dayOfWeek === selectedDate.toLocaleDateString("en-US", { weekday: "long" }))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime)), [semesterLectures, selectedDate]);
 
   const today = startOfDay(new Date());
   const monthLabel = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -147,7 +154,8 @@ export default function CalendarPage() {
             const dayBookings = bookingsByDate[key] || [];
             const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
             const isSelected = isSameDay(day, selectedDate);
-            const hasBooking = dayBookings.length > 0;
+            const hasLecture = semesterLectures.some((lecture) => lecture.dayOfWeek === day.toLocaleDateString("en-US", { weekday: "long" }));
+            const hasBooking = dayBookings.length > 0 || hasLecture;
             const isPast = startOfDay(day) < today;
 
             return (
@@ -195,7 +203,7 @@ export default function CalendarPage() {
           <div>
             <h3 className="text-base font-black text-slate-900">{selectedLabel}</h3>
             <p className="text-xs font-semibold text-slate-400">
-              {selectedBookings.length ? `${selectedBookings.length} booking${selectedBookings.length > 1 ? "s" : ""}` : "No bookings yet"}
+              {selectedLectures.length} semester lectures · {selectedBookings.length} room bookings
             </p>
           </div>
           <Button asChild size="sm" className="rounded-xl">
@@ -205,6 +213,8 @@ export default function CalendarPage() {
             </Link>
           </Button>
         </div>
+
+        {!loading && selectedLectures.length ? <div className="space-y-3">{selectedLectures.map((lecture) => <article key={lecture.id} className="rounded-2xl border border-blue-100 bg-blue-50 p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h4 className="font-black text-blue-950">{lecture.moduleCode}</h4><p className="mt-1 text-xs font-semibold text-blue-700">{lecture.batch} · {lecture.semester}</p></div><span className="rounded-full bg-blue-600 px-2.5 py-1 text-[10px] font-bold text-white">SEMESTER</span></div><div className="mt-3 flex gap-3 text-sm font-semibold text-blue-900"><span>{lecture.startTime} - {lecture.endTime}</span><span>·</span><span>{lecture.roomCode}</span></div></article>)}</div> : null}
 
         {loading ? (
           <div className="space-y-3">
@@ -238,14 +248,14 @@ export default function CalendarPage() {
               </article>
             ))}
           </div>
-        ) : (
+        ) : !selectedLectures.length ? (
           <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-center">
             <h4 className="font-black text-emerald-800">Available date</h4>
             <p className="mt-1 text-sm font-medium text-emerald-700">
               You do not have any active bookings on this date.
             </p>
           </div>
-        )}
+        ) : null}
       </section>
     </div>
   );
