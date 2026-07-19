@@ -31,8 +31,12 @@ export default function NewBookingPage() {
 
   const submit = async (value: BookingInput) => {
     try {
-      await createBookingRequest(value);
-      showToast("Pending your request", "Room is available and request was submitted.", "success");
+      const booking = await createBookingRequest(value);
+      if (booking.status === "APPROVED") {
+        showToast("Booking approved", "The room was available and has been reserved automatically.", "success");
+      } else {
+        showToast("Sent for admin approval", "The selected time overlaps the timetable or another booking.", "info");
+      }
       router.push("/lecturer/bookings");
       router.refresh();
     } catch (error) {
@@ -55,7 +59,7 @@ export default function NewBookingPage() {
         </div>
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">Request Space</h1>
-          <p className="text-sm font-medium text-slate-500">Fill in details for admin approval.</p>
+          <p className="text-sm font-medium text-slate-500">Available rooms are approved automatically; overlaps are reviewed by an admin.</p>
         </div>
       </div>
 

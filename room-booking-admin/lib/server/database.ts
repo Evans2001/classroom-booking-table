@@ -97,6 +97,7 @@ interface LecturerIdentity {
   name: string;
   email: string;
   department: string;
+  idNumber: string;
   sessionToken?: string;
 }
 
@@ -163,6 +164,23 @@ export interface LecturerAccount {
   updatedAt: string;
   sessionToken?: string;
 }
+
+export interface TimetableEntry {
+  id: string;
+  semester: string;
+  department: string;
+  batch: string;
+  lecturerName: string;
+  lecturerId: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  moduleCode: string;
+  roomCode: string;
+  uploadedAt: string;
+}
+
+export type TimetableEntryInput = Omit<TimetableEntry, "id" | "uploadedAt">;
 
 interface ImportedRow {
   requesterName: string;
@@ -315,6 +333,14 @@ const seededRooms: CreateRoomInput[] = [
     hasAc: false,
     status: "INACTIVE",
   },
+];
+
+const realFacultyRooms: CreateRoomInput[] = [
+  { code: "AUDITORIUM", name: "Auditorium", building: "Faculty of Engineering", floor: 0, capacity: 400, type: "LECTURE_HALL", hasProjector: true, hasAc: true, status: "ACTIVE" },
+  ...["LT1", "LT2", "NHL1", "NHL2", "NHL3", "NHL4", "LR1", "LR2", "EEC", "ELR", "NCC", "OCC", "DO1", "DO2"].map((code) => ({
+    code, name: code, building: "Faculty of Engineering", floor: 0, capacity: 100,
+    type: "LECTURE_HALL" as const, hasProjector: true, hasAc: false, status: "ACTIVE" as const,
+  })),
 ];
 
 const seededRequests = [
@@ -673,14 +699,46 @@ function getDatabase(): DatabaseSync {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS timetable_entries (
+        id TEXT PRIMARY KEY,
+        semester TEXT NOT NULL,
+        department TEXT NOT NULL,
+        batch TEXT NOT NULL DEFAULT '',
+        lecturer_name TEXT NOT NULL,
+        lecturer_id TEXT NOT NULL DEFAULT '',
+        day_of_week TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        module_code TEXT NOT NULL,
+        room_code TEXT NOT NULL,
+        uploaded_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS timetable_room_slot
+        ON timetable_entries(room_code, day_of_week, start_time, end_time);
     `);
+    try { database.exec("ALTER TABLE timetable_entries ADD COLUMN batch TEXT NOT NULL DEFAULT ''"); } catch { /* Existing column. */ }
+    try { database.exec("ALTER TABLE timetable_entries ADD COLUMN lecturer_id TEXT NOT NULL DEFAULT ''"); } catch { /* Existing column. */ }
     seedIfNeeded(database);
+    ensureRealFacultyRooms(database);
     ensureDefaultAccounts(database);
     globalThis.__roomBookingDatabase__ = database;
   }
 
   ensureSessionTable(globalThis.__roomBookingDatabase__);
   return globalThis.__roomBookingDatabase__;
+}
+
+function ensureRealFacultyRooms(database: DatabaseSync): void {
+  const insert = database.prepare(`INSERT OR IGNORE INTO rooms
+    (id, code, name, building, floor, capacity, type, has_projector, has_ac, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const now = new Date().toISOString();
+  for (const room of realFacultyRooms) {
+    insert.run(`room-${room.code.toLowerCase()}`, room.code, room.name, room.building, room.floor,
+      room.capacity, room.type, Number(room.hasProjector), Number(room.hasAc), room.status, now, now);
+  }
 }
 
 function ensureSessionTable(database: DatabaseSync): void {
@@ -782,6 +840,7 @@ function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): Lecturer
       name: row.name,
       email: row.gmail,
       department: row.department,
+      idNumber: row.id_number,
       sessionToken,
     };
   }
@@ -1229,7 +1288,9 @@ export function getMinBookingDateTimeInputValue(): string {
 }
 
 export function listAdminRooms(filters?: RoomFilters): AdminRoom[] {
-  const rooms = getDatabase()
+  const database = getDatabase();
+  ensureRealFacultyRooms(database);
+  const rooms = database
     .prepare("SELECT * FROM rooms ORDER BY name ASC")
     .all() as RoomRow[];
 
@@ -1401,6 +1462,88 @@ export async function decideAdminRequest(
     }),
   );
   return updated;
+}
+
+function minutes(value: string): number {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return Number.NaN;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function timetableOverlapExists(roomCode: string, startAt: string, endAt: string): boolean {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  const day = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][start.getDay()];
+  const startMinute = start.getHours() * 60 + start.getMinutes();
+  const endMinute = end.getHours() * 60 + end.getMinutes();
+  const rows = getDatabase().prepare(
+    "SELECT start_time, end_time FROM timetable_entries WHERE lower(room_code) = lower(?) AND day_of_week = ?",
+  ).all(roomCode, day) as Array<{ start_time: string; end_time: string }>;
+  return rows.some((row) => startMinute < minutes(row.end_time) && minutes(row.start_time) < endMinute);
+}
+
+export function listTimetableEntries(filters?: { department?: string; lecturer?: string }): TimetableEntry[] {
+  const rows = getDatabase().prepare("SELECT * FROM timetable_entries ORDER BY day_of_week, start_time").all() as Array<Record<string, string>>;
+  return rows.map((row) => ({
+    id: row.id, semester: row.semester, department: row.department, batch: row.batch || row.semester,
+    lecturerName: row.lecturer_name, lecturerId: row.lecturer_id || "", dayOfWeek: row.day_of_week,
+    startTime: row.start_time, endTime: row.end_time, moduleCode: row.module_code,
+    roomCode: row.room_code, uploadedAt: row.uploaded_at,
+  })).filter((entry) => (!filters?.department || entry.department === filters.department)
+    && (!filters?.lecturer || entry.lecturerName === filters.lecturer));
+}
+
+export function deleteTimetableEntries(scope: { department: string; batch: string; semester: string }): number {
+  if (!scope.department || !scope.batch || !scope.semester) {
+    throw new Error("Department, batch, and semester are required.");
+  }
+  const result = getDatabase().prepare(
+    "DELETE FROM timetable_entries WHERE department = ? AND semester = ? AND (batch = ? OR batch = '')",
+  ).run(scope.department, scope.semester, scope.batch);
+  return Number(result.changes);
+}
+
+export function importTimetableEntries(entries: TimetableEntryInput[]): TimetableEntry[] {
+  const database = getDatabase();
+  const insert = database.prepare(`INSERT INTO timetable_entries
+    (id, semester, department, batch, lecturer_name, lecturer_id, day_of_week, start_time, end_time, module_code, room_code, uploaded_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  const uploadedAt = new Date().toISOString();
+  database.exec("BEGIN");
+  try {
+    const scope = entries[0];
+    if (!scope?.department || !scope.batch || !scope.semester) {
+      throw new Error("Department, batch, and semester are required.");
+    }
+    if (entries.some((entry) => entry.department !== scope.department
+      || entry.batch !== scope.batch || entry.semester !== scope.semester)) {
+      throw new Error("Every row in one upload must use the same department, batch, and semester.");
+    }
+    database.prepare(
+      "DELETE FROM timetable_entries WHERE department = ? AND semester = ? AND (batch = ? OR batch = '')",
+    ).run(scope.department, scope.semester, scope.batch);
+
+    for (const entry of entries) {
+      if (!entry.department || !entry.batch || !entry.dayOfWeek || !entry.moduleCode || !entry.roomCode
+        || Number.isNaN(minutes(entry.startTime)) || Number.isNaN(minutes(entry.endTime))
+        || minutes(entry.endTime) <= minutes(entry.startTime)) throw new Error("Invalid timetable entry");
+      const conflict = listTimetableEntries().find((existing) => existing.roomCode.toLowerCase() === entry.roomCode.toLowerCase()
+        && existing.dayOfWeek === entry.dayOfWeek && minutes(entry.startTime) < minutes(existing.endTime)
+        && minutes(existing.startTime) < minutes(entry.endTime));
+      if (conflict) throw new Error(`${entry.roomCode} already has ${conflict.moduleCode} on ${entry.dayOfWeek} at ${conflict.startTime}`);
+      insert.run(`tt-${randomUUID()}`, entry.semester, entry.department, entry.batch, entry.lecturerName || "Unassigned", entry.lecturerId || "", entry.dayOfWeek,
+        entry.startTime, entry.endTime, entry.moduleCode, entry.roomCode, uploadedAt);
+    }
+    database.exec("COMMIT");
+  } catch (error) { database.exec("ROLLBACK"); throw error; }
+  return listTimetableEntries().filter((entry) => entry.uploadedAt === uploadedAt);
+}
+
+export function listLecturerTimetable(identity?: Partial<LecturerIdentity>): TimetableEntry[] {
+  const lecturer = resolveLecturerIdentity(identity);
+  return listTimetableEntries().filter((entry) =>
+    (entry.lecturerId && entry.lecturerId.toLowerCase() === lecturer.idNumber.toLowerCase())
+    || (!entry.lecturerId && entry.lecturerName.toLowerCase() === lecturer.name.toLowerCase()));
 }
 
 export function createImportedAdminRequests(rows: ImportedRow[]): BookingRequest[] {
@@ -1810,7 +1953,7 @@ export function getLecturerBookingById(id: string, identity?: Partial<LecturerId
   return row ? mapBookingRowToLecturerBooking(row) : undefined;
 }
 
-export function checkLecturerRoomAvailability(input: BookingAvailabilityInput): { available: boolean; message: string } {
+export function checkLecturerRoomAvailability(input: BookingAvailabilityInput): { available: boolean; requiresApproval?: boolean; message: string } {
   const room = getAdminRoomById(input.roomId);
   if (!room) {
     return { available: false, message: "Selected room not found." };
@@ -1831,8 +1974,9 @@ export function checkLecturerRoomAvailability(input: BookingAvailabilityInput): 
     const message = error instanceof Error ? error.message : "Choose valid start and end date/time.";
     return { available: false, message };
   }
-  if (overlapExists(input.roomId, input.startAt, input.endAt, input.excludeBookingId)) {
-    return { available: false, message: "Room is not available for the selected period." };
+  if (overlapExists(input.roomId, input.startAt, input.endAt, input.excludeBookingId)
+      || timetableOverlapExists(room.code, input.startAt, input.endAt)) {
+    return { available: true, requiresApproval: true, message: "This time overlaps an existing booking or semester lecture. You may submit it for admin approval." };
   }
   return { available: true, message: "Room is available for this period." };
 }
@@ -1870,9 +2014,9 @@ export async function createLecturerBooking(input: BookingInput, identity?: Part
       new Date(input.startAt).toISOString(),
       new Date(input.endAt).toISOString(),
       input.attendees,
-      "PENDING",
+      availability.requiresApproval ? "PENDING" : "APPROVED",
       submittedAt,
-      null,
+      availability.requiresApproval ? "Conflict detected; admin review required." : "Automatically approved because the room is available.",
       "lecturer",
     );
   const booking = getLecturerBookingById(id, lecturer);
