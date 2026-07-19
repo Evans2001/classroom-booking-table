@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { useToast } from "@/components/common/ToastProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -12,10 +11,14 @@ import { Label } from "@/components/ui/label";
 interface TimetableRecord {
   semester: string;
   department: string;
+  batch: string;
+  lecturerName: string;
+  lecturerId: string;
   dayOfWeek: string;
-  timeSlot: string;
+  startTime: string;
+  endTime: string;
   moduleCode: string;
-  roomName: string;
+  roomCode: string;
 }
 
 interface ImportResult {
@@ -61,16 +64,44 @@ function parseCsvLine(line: string): string[] {
 export default function TimetableImportPage() {
   const [semester, setSemester] = useState("");
   const [department, setDepartment] = useState("");
+  const [batch, setBatch] = useState("");
   const [file, setFile] = useState<File | null>(null);
   
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [uploaded, setUploaded] = useState<TimetableRecord[]>([]);
   const { showToast } = useToast();
+
+  const loadUploaded = async () => {
+    const response = await fetch("/api/timetable/upload");
+    if (response.ok) setUploaded(await response.json());
+  };
+  useEffect(() => { void loadUploaded(); }, []);
+  const uploadedGroups = useMemo(() => {
+    const groups = new Map<string, { department: string; batch: string; semester: string; count: number }>();
+    for (const entry of uploaded) {
+      const key = `${entry.department}|${entry.batch}|${entry.semester}`;
+      const group = groups.get(key);
+      if (group) group.count += 1;
+      else groups.set(key, { department: entry.department, batch: entry.batch, semester: entry.semester, count: 1 });
+    }
+    return [...groups.values()];
+  }, [uploaded]);
+
+  const removeUpload = async (group: { department: string; batch: string; semester: string }) => {
+    if (!window.confirm(`Remove the timetable for ${group.batch}, ${group.semester}?`)) return;
+    const query = new URLSearchParams(group).toString();
+    const response = await fetch(`/api/timetable/upload?${query}`, { method: "DELETE" });
+    const payload = await response.json();
+    if (!response.ok) { showToast("Removal failed", payload.error || "Unable to remove timetable.", "error"); return; }
+    showToast("Timetable removed", `Removed ${payload.deleted} scheduled lectures.`, "success");
+    await loadUploaded();
+  };
 
   const handleImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!semester || !department || !file) {
-      showToast("Missing information", "Please select a semester, department, and a CSV file.", "error");
+    if (!semester || !department || !batch.trim() || !file) {
+      showToast("Missing information", "Please select a semester and department, enter the batch, and choose a CSV file.", "error");
       return;
     }
     if (!file.name.toLowerCase().endsWith(".csv")) {
@@ -108,33 +139,43 @@ export default function TimetableImportPage() {
         const timeSlot = row[0];
         
         if (!timeSlot) return; // Skip empty rows
+        const [startTime, endTime] = timeSlot.split(/\s*[-–]\s*/);
+        if (!startTime || !endTime || !/^\d{1,2}:\d{2}$/.test(startTime) || !/^\d{1,2}:\d{2}$/.test(endTime)) {
+          errors.push(`Row ${rowIndex + 2}: Time must use HH:MM-HH:MM format.`);
+          return;
+        }
 
         // Iterate through columns (days of the week)
         for (let col = 1; col <= 6; col++) {
           const cellValue = row[col];
           if (!cellValue) continue; // Skip empty cells
 
-          const parts = cellValue.split("-");
-          if (parts.length < 2) {
-            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: Cell "${cellValue}" does not match [Module Code]-[Room Name] format.`);
+          const [lecturePart, lecturerPart, lecturerIdPart] = cellValue.split("|").map((part) => part.trim());
+          const separator = lecturePart.indexOf("-");
+          if (separator < 1 || separator === lecturePart.length - 1) {
+            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: Cell "${cellValue}" does not match [Module Code]-[Room Code] format.`);
             continue;
           }
 
-          const roomName = parts.pop()!.trim();
-          const moduleCode = parts.join("-").trim();
+          const moduleCode = lecturePart.slice(0, separator).trim();
+          const roomCode = lecturePart.slice(separator + 1).trim();
 
-          if (!moduleCode || !roomName) {
-            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: Cell "${cellValue}" has empty module or room.`);
+          if (!moduleCode || !roomCode) {
+            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: Cell "${cellValue}" has an empty module or room code.`);
             continue;
           }
 
           parsedRecords.push({
             semester,
             department,
+            batch: batch.trim(),
+            lecturerName: lecturerPart || "Unassigned",
+            lecturerId: lecturerIdPart || "",
             dayOfWeek: EXPECTED_HEADERS[col],
-            timeSlot,
+            startTime,
+            endTime,
             moduleCode,
-            roomName,
+            roomCode,
           });
         }
       });
@@ -145,23 +186,32 @@ export default function TimetableImportPage() {
       });
 
       if (parsedRecords.length > 0) {
-        showToast("Import processed", `Successfully parsed ${parsedRecords.length} records.`, "success");
-        // Log the normalized JSON array as requested by the instructions implicitly for verification
-        console.log("Parsed Normalized JSON Records:", parsedRecords);
+        if (errors.length) {
+          showToast("Validation failed", "Fix all CSV errors before importing.", "error");
+          return;
+        }
+        const response = await fetch("/api/timetable/upload", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: parsedRecords }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Import failed");
+        showToast("Timetable imported", `Saved ${payload.count} scheduled lectures.`, "success");
+        await loadUploaded();
       } else if (errors.length > 0) {
         showToast("Import failed", "Check row validation errors.", "error");
       } else {
         showToast("Import empty", "No valid records found in the matrix.", "info");
       }
     } catch (err) {
-      showToast("Error processing file", "An unexpected error occurred while parsing.", "error");
+      showToast("Import failed", err instanceof Error ? err.message : "An unexpected error occurred.", "error");
       console.error(err);
     } finally {
       setSubmitting(false);
     }
   };
 
-  const isFormValid = semester && department && file;
+  const isFormValid = semester && department && batch.trim() && file;
 
   return (
     <div className="space-y-6">
@@ -170,12 +220,18 @@ export default function TimetableImportPage() {
           <CardTitle>Timetable CSV Import</CardTitle>
           <CardDescription>
             Upload a weekly timetable matrix CSV. Columns must be: Time, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday.
-            Cells should contain [Module Code]-[Room Name] (e.g. EE6401-ECC).
+            Cells may contain [Module Code]-[Room Code]|[Lecturer]|[Lecturer ID] (e.g. CS6101-LH-101|Dr Silva|LEC001).
+            The lecturer part is optional and can differ for every cell.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-5" onSubmit={handleImport}>
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="batch">Batch</Label>
+                <Input id="batch" value={batch} onChange={(e) => setBatch(e.target.value)} placeholder="For example: 2023 Intake" />
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="semester">Semester</Label>
                 <Select
@@ -216,6 +272,16 @@ export default function TimetableImportPage() {
               {submitting ? "Processing..." : "Import Timetable"}
             </button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Uploaded timetables</CardTitle><CardDescription>Remove a complete timetable upload by department, batch, and semester.</CardDescription></CardHeader>
+        <CardContent className="space-y-3">
+          {uploadedGroups.length ? uploadedGroups.map((group) => <div key={`${group.department}-${group.batch}-${group.semester}`} className="flex flex-col gap-3 rounded-lg border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="font-semibold text-slate-900">{group.department} · {group.batch}</p><p className="text-sm text-slate-500">{group.semester} · {group.count} lectures</p></div>
+            <button type="button" onClick={() => void removeUpload(group)} className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">Remove</button>
+          </div>) : <p className="text-sm text-slate-500">No timetables have been uploaded.</p>}
         </CardContent>
       </Card>
 

@@ -23,7 +23,7 @@ interface BookingRequestFormProps {
   onSubmit: (value: BookingInput) => Promise<void> | void;
 }
 
-type AvailabilityState = "idle" | "checking" | "available" | "unavailable";
+type AvailabilityState = "idle" | "checking" | "available" | "approval_required" | "unavailable";
 
 function toDateTimeLocal(value: string): string {
   const date = new Date(value);
@@ -44,7 +44,7 @@ export function BookingRequestForm({
   defaultRoomId,
   initialValues,
   availabilityExcludeBookingId,
-  submitLabel = "Submit Booking Request",
+  submitLabel = "Book Room",
   onSubmit,
 }: BookingRequestFormProps) {
   const buildings = useMemo(
@@ -105,7 +105,7 @@ export function BookingRequestForm({
         excludeBookingId: availabilityExcludeBookingId,
       });
       if (!active) return;
-      setAvailabilityState(result.available ? "available" : "unavailable");
+      setAvailabilityState(result.requiresApproval ? "approval_required" : result.available ? "available" : "unavailable");
       setAvailabilityMessage(result.message);
     }, 400);
 
@@ -117,7 +117,7 @@ export function BookingRequestForm({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (availabilityState !== "available") {
+    if (availabilityState !== "available" && availabilityState !== "approval_required") {
       return;
     }
     setSubmitting(true);
@@ -191,6 +191,8 @@ export function BookingRequestForm({
         className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
           availabilityState === "available"
             ? "border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
+            : availabilityState === "approval_required"
+              ? "border-amber-200 bg-amber-50 text-amber-900 shadow-sm"
             : availabilityState === "unavailable"
               ? "border-rose-200 bg-rose-50 text-rose-800"
               : availabilityState === "checking"
@@ -200,6 +202,7 @@ export function BookingRequestForm({
       >
         <div className="mt-0.5 shrink-0">
           {availabilityState === "available" && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+          {availabilityState === "approval_required" && <AlertCircle className="h-5 w-5 text-amber-600" />}
           {availabilityState === "unavailable" && <AlertCircle className="h-5 w-5 text-rose-600" />}
           {availabilityState === "checking" && <Loader2 className="h-5 w-5 animate-spin text-blue-600" />}
           {availabilityState === "idle" && <MapPin className="h-5 w-5 text-slate-400" />}
@@ -207,6 +210,7 @@ export function BookingRequestForm({
         <div>
           <h4 className="text-sm font-bold leading-none mb-1">
             {availabilityState === "available" ? "Room Available" : 
+             availabilityState === "approval_required" ? "Admin Approval Required" :
              availabilityState === "unavailable" ? "Unavailable" : 
              availabilityState === "checking" ? "Verifying..." : "Check Availability"}
           </h4>
@@ -265,7 +269,7 @@ export function BookingRequestForm({
         <div className="mx-auto max-w-md">
           <Button 
             type="submit" 
-            disabled={submitting || availabilityState !== "available"} 
+            disabled={submitting || !["available", "approval_required"].includes(availabilityState)} 
             className="w-full h-14 rounded-xl shadow-lg shadow-brand-primary/20 text-base"
           >
             {submitting ? "Saving..." : submitLabel}

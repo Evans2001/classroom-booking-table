@@ -1664,6 +1664,17 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
         bookings.insert(0, savedBooking);
       }
       if (mounted) {
+        if (!isEditing) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                savedBooking.status == BookingStatus.approved
+                    ? 'Room available. Your booking was approved automatically.'
+                    : 'This time overlaps an existing schedule and was sent for admin approval.',
+              ),
+            ),
+          );
+        }
         Navigator.of(context).pop();
       }
     } catch (error) {
