@@ -6,7 +6,6 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { ApproveRejectModal } from "@/components/modals/ApproveRejectModal";
 import { DataTable, type DataColumn } from "@/components/tables/DataTable";
 import { requestsColumns } from "@/components/tables/columns/requests.columns";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/common/ToastProvider";
@@ -18,7 +17,7 @@ export default function RequestsPage() {
   const [requests, setRequests] = useState<BookingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<RequestStatus | "ALL">("ALL");
+  const [status, setStatus] = useState<RequestStatus | "ALL">("PENDING");
   const [selected, setSelected] = useState<BookingRequest | null>(null);
   const { showToast } = useToast();
 
@@ -73,6 +72,9 @@ export default function RequestsPage() {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        Only time or room collisions require review. Conflict-free lecturer bookings are approved automatically.
+      </div>
       <div className="flex flex-col gap-2 md:flex-row md:max-w-3xl">
         <Input
           placeholder="Search requester, department, purpose..."
@@ -85,7 +87,7 @@ export default function RequestsPage() {
           onChange={(event) => setStatus(event.target.value as RequestStatus | "ALL")}
           options={[
             { label: "All statuses", value: "ALL" },
-            { label: REQUEST_STATUS_LABELS.PENDING, value: "PENDING" },
+            { label: "Pending conflicts", value: "PENDING" },
             { label: REQUEST_STATUS_LABELS.APPROVED, value: "APPROVED" },
             { label: REQUEST_STATUS_LABELS.REJECTED, value: "REJECTED" },
             { label: REQUEST_STATUS_LABELS.CANCELLED, value: "CANCELLED" },

@@ -16,6 +16,8 @@ export default function NewBookingPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const searchParams = useSearchParams();
   const defaultRoomId = searchParams.get("roomId") ?? undefined;
+  const defaultStartAt = searchParams.get("startAt") ?? "";
+  const defaultEndAt = searchParams.get("endAt") ?? "";
   const { showToast } = useToast();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -31,8 +33,12 @@ export default function NewBookingPage() {
 
   const submit = async (value: BookingInput) => {
     try {
-      await createBookingRequest(value);
-      showToast("Pending your request", "Room is available and request was submitted.", "success");
+      const booking = await createBookingRequest(value);
+      if (booking.status === "APPROVED") {
+        showToast("Booking approved", "The room was available and has been reserved automatically.", "success");
+      } else {
+        showToast("Sent for admin approval", "The selected time overlaps the timetable or another booking.", "info");
+      }
       router.push("/lecturer/bookings");
       router.refresh();
     } catch (error) {
@@ -55,7 +61,7 @@ export default function NewBookingPage() {
         </div>
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">Request Space</h1>
-          <p className="text-sm font-medium text-slate-500">Fill in details for admin approval.</p>
+          <p className="text-sm font-medium text-slate-500">Available rooms are approved automatically; overlaps are reviewed by an admin.</p>
         </div>
       </div>
 
@@ -68,7 +74,19 @@ export default function NewBookingPage() {
             <div className="h-24 rounded-xl bg-slate-100" />
           </div>
         ) : rooms.length ? (
-          <BookingRequestForm rooms={rooms} defaultRoomId={defaultRoomId} onSubmit={submit} />
+          <BookingRequestForm
+            rooms={rooms}
+            defaultRoomId={defaultRoomId}
+            initialValues={defaultStartAt && defaultEndAt ? {
+              roomId: defaultRoomId ?? "",
+              moduleName: "",
+              startAt: defaultStartAt,
+              endAt: defaultEndAt,
+              purpose: "",
+              attendees: 1,
+            } : undefined}
+            onSubmit={submit}
+          />
         ) : (
           <div className="text-center py-8">
             <p className="text-sm font-medium text-slate-500">No rooms available for booking.</p>

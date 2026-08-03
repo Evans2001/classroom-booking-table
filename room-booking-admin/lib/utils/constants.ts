@@ -17,6 +17,7 @@ export const SIDEBAR_ITEMS = [
   { href: "/admin/account-requests", label: "Account Requests" },
   { href: "/admin/issues", label: "Issues" },
   { href: "/admin/timetable-import", label: "Timetable Import" },
+  { href: "/admin/calendar", label: "Semester Calendar" },
   { href: "/admin/reports", label: "Reports" },
 ] as const;
 
@@ -27,6 +28,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/admin/account-requests": "Account Requests",
   "/admin/issues": "Issues",
   "/admin/timetable-import": "Timetable Import",
+  "/admin/calendar": "Semester Calendar",
   "/admin/reports": "Reports",
 };
 

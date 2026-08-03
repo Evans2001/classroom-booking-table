@@ -28,5 +28,6 @@ export interface BookingInput {
 
 export interface AvailabilityResult {
   available: boolean;
+  requiresApproval?: boolean;
   message: string;
 }
