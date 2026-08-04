@@ -16,6 +16,8 @@ export default function NewBookingPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const searchParams = useSearchParams();
   const defaultRoomId = searchParams.get("roomId") ?? undefined;
+  const defaultStartAt = searchParams.get("startAt") ?? "";
+  const defaultEndAt = searchParams.get("endAt") ?? "";
   const { showToast } = useToast();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -72,7 +74,19 @@ export default function NewBookingPage() {
             <div className="h-24 rounded-xl bg-slate-100" />
           </div>
         ) : rooms.length ? (
-          <BookingRequestForm rooms={rooms} defaultRoomId={defaultRoomId} onSubmit={submit} />
+          <BookingRequestForm
+            rooms={rooms}
+            defaultRoomId={defaultRoomId}
+            initialValues={defaultStartAt && defaultEndAt ? {
+              roomId: defaultRoomId ?? "",
+              moduleName: "",
+              startAt: defaultStartAt,
+              endAt: defaultEndAt,
+              purpose: "",
+              attendees: 1,
+            } : undefined}
+            onSubmit={submit}
+          />
         ) : (
           <div className="text-center py-8">
             <p className="text-sm font-medium text-slate-500">No rooms available for booking.</p>

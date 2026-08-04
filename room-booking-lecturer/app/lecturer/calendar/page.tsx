@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Plus } from "lucide-react";
+import { BookOpen, Building2, CalendarDays, ChevronLeft, ChevronRight, Clock, MapPin, Plus } from "lucide-react";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { listMyBookings } from "@/lib/services/bookings.service";
+import { listAvailableRooms } from "@/lib/services/rooms.service";
 import { listMySemesterLectures } from "@/lib/services/timetable.service";
 import type { Booking } from "@/lib/types/booking";
+import type { Room } from "@/lib/types/room";
 import type { LecturerTimetableEntry } from "@/lib/types/timetable";
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -38,9 +40,19 @@ function formatTimeRange(booking: Booking): string {
   return `${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
+function toLocalDateTime(date: Date, time: string): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}T${time}`;
+}
+
 export default function CalendarPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [semesterLectures, setSemesterLectures] = useState<LecturerTimetableEntry[]>([]);
+  const [availabilityResult, setAvailabilityResult] = useState<{ key: string; rooms: Room[] } | null>(null);
+  const [startTime, setStartTime] = useState("08:00");
+  const [endTime, setEndTime] = useState("09:00");
   const [loading, setLoading] = useState(true);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfDay(new Date()));
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()));
@@ -55,6 +67,27 @@ export default function CalendarPage() {
 
     void loadBookings();
   }, []);
+
+  const startAt = toLocalDateTime(selectedDate, startTime);
+  const endAt = toLocalDateTime(selectedDate, endTime);
+  const minimumBookingDate = useMemo(() => {
+    const date = startOfDay(new Date());
+    date.setDate(date.getDate() + 7);
+    return date;
+  }, []);
+  const canCheckAvailability = selectedDate >= minimumBookingDate && endTime > startTime;
+  const availabilityKey = `${startAt}|${endAt}`;
+  const availableRooms = availabilityResult?.key === availabilityKey ? availabilityResult.rooms : [];
+  const availabilityLoading = canCheckAvailability && availabilityResult?.key !== availabilityKey;
+
+  useEffect(() => {
+    if (!canCheckAvailability) return;
+    let active = true;
+    void listAvailableRooms(startAt, endAt)
+      .then((rooms) => { if (active) setAvailabilityResult({ key: availabilityKey, rooms }); })
+      .catch(() => { if (active) setAvailabilityResult({ key: availabilityKey, rooms: [] }); });
+    return () => { active = false; };
+  }, [availabilityKey, canCheckAvailability, endAt, startAt]);
 
   const calendarDays = useMemo(() => {
     const firstDay = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
@@ -256,6 +289,44 @@ export default function CalendarPage() {
             </p>
           </div>
         ) : null}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-base font-black text-slate-900">Free rooms for booking</h3>
+          <p className="text-xs font-semibold text-slate-400">Checks semester lectures and active room bookings.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1 text-xs font-bold text-slate-500">
+            Start time
+            <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900" />
+          </label>
+          <label className="space-y-1 text-xs font-bold text-slate-500">
+            End time
+            <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900" />
+          </label>
+        </div>
+        {selectedDate < minimumBookingDate ? (
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">Select a date at least seven days ahead to see rooms available for booking.</div>
+        ) : endTime <= startTime ? (
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm font-semibold text-rose-700">End time must be later than start time.</div>
+        ) : availabilityLoading ? (
+          <div className="h-24 animate-pulse rounded-2xl bg-slate-200" />
+        ) : availableRooms.length ? (
+          <div className="space-y-2">{availableRooms.map((room) => (
+            <article key={room.id} className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 shrink-0 text-emerald-700" /><h4 className="truncate font-black text-emerald-950">{room.code} - {room.name}</h4></div>
+                <p className="mt-1 text-xs font-semibold text-emerald-700">{room.building} · Capacity {room.capacity}</p>
+              </div>
+              <Button asChild size="sm" className="shrink-0 rounded-xl">
+                <Link href={`/lecturer/bookings/new?${new URLSearchParams({ roomId: room.id, startAt, endAt })}`}>Book</Link>
+              </Button>
+            </article>
+          ))}</div>
+        ) : (
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-center text-sm font-semibold text-slate-500">No rooms are free for this time range.</div>
+        )}
       </section>
     </div>
   );
