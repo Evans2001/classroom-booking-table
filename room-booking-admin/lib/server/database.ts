@@ -1503,6 +1503,36 @@ export function deleteTimetableEntries(scope: { department: string; batch: strin
   return Number(result.changes);
 }
 
+export function updateTimetableEntry(id: string, input: TimetableEntryInput): TimetableEntry {
+  const existing = listTimetableEntries().find((entry) => entry.id === id);
+  if (!existing) throw new Error("Scheduled lecture not found.");
+  if (!input.department || !input.batch || !input.semester || !input.dayOfWeek || !input.moduleCode || !input.roomCode
+    || Number.isNaN(minutes(input.startTime)) || Number.isNaN(minutes(input.endTime))
+    || minutes(input.endTime) <= minutes(input.startTime)) {
+    throw new Error("Enter valid lecture details and ensure the end time is after the start time.");
+  }
+  const conflict = listTimetableEntries().find((entry) => entry.id !== id
+    && entry.roomCode.toLowerCase() === input.roomCode.toLowerCase()
+    && entry.dayOfWeek === input.dayOfWeek
+    && minutes(input.startTime) < minutes(entry.endTime)
+    && minutes(entry.startTime) < minutes(input.endTime));
+  if (conflict) {
+    throw new Error(`${input.roomCode} already has ${conflict.moduleCode} on ${input.dayOfWeek} at ${conflict.startTime}.`);
+  }
+  getDatabase().prepare(`UPDATE timetable_entries SET
+    semester = ?, department = ?, batch = ?, lecturer_name = ?, lecturer_id = ?, day_of_week = ?,
+    start_time = ?, end_time = ?, module_code = ?, room_code = ? WHERE id = ?`).run(
+    input.semester, input.department, input.batch, input.lecturerName || "Unassigned", input.lecturerId || "",
+    input.dayOfWeek, input.startTime, input.endTime, input.moduleCode, input.roomCode, id,
+  );
+  return listTimetableEntries().find((entry) => entry.id === id)!;
+}
+
+export function deleteTimetableEntry(id: string): void {
+  const result = getDatabase().prepare("DELETE FROM timetable_entries WHERE id = ?").run(id);
+  if (!result.changes) throw new Error("Scheduled lecture not found.");
+}
+
 export function importTimetableEntries(entries: TimetableEntryInput[]): TimetableEntry[] {
   const database = getDatabase();
   const insert = database.prepare(`INSERT INTO timetable_entries
@@ -1934,6 +1964,32 @@ export function listLecturerRooms(): LecturerRoom[] {
   return listAdminRooms().map(adminRoomToLecturerRoom);
 }
 
+export function listAvailableLecturerRooms(startAt: string, endAt: string): LecturerRoom[] {
+  return listLecturerRooms().filter((room) => {
+    const availability = checkLecturerRoomAvailability({ roomId: room.id, startAt, endAt });
+    return availability.available && !availability.requiresApproval;
+  });
+}
+
+function moveOverlappingLecturerBookingsToReview(roomId: string, startAt: string, endAt: string): number {
+  const nextStart = new Date(startAt).getTime();
+  const nextEnd = new Date(endAt).getTime();
+  const rows = getDatabase().prepare(`
+    SELECT id, start_at, end_at
+    FROM booking_requests
+    WHERE room_id = ? AND source = 'lecturer' AND status = 'APPROVED'
+  `).all(roomId) as Array<{ id: string; start_at: string; end_at: string }>;
+  const conflicts = rows.filter((row) => nextStart < new Date(row.end_at).getTime()
+    && new Date(row.start_at).getTime() < nextEnd);
+  const update = getDatabase().prepare(`
+    UPDATE booking_requests
+    SET status = 'PENDING', reviewer_note = 'Another lecturer requested the same room and time; admin review required.'
+    WHERE id = ?
+  `);
+  for (const conflict of conflicts) update.run(conflict.id);
+  return conflicts.length;
+}
+
 export function getLecturerRoomById(id: string): LecturerRoom | undefined {
   const room = getAdminRoomById(id);
   return room ? adminRoomToLecturerRoom(room) : undefined;
@@ -1994,6 +2050,9 @@ export async function createLecturerBooking(input: BookingInput, identity?: Part
   }
   const id = `bk-${randomUUID()}`;
   const submittedAt = new Date().toISOString();
+  if (availability.requiresApproval) {
+    moveOverlappingLecturerBookingsToReview(input.roomId, input.startAt, input.endAt);
+  }
   getDatabase()
     .prepare(
       `

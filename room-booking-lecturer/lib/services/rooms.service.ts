@@ -1,8 +1,12 @@
 import type { Room } from "@/lib/types/room";
-import { apiGet } from "@/lib/services/api-client";
+import { apiGet, apiSend } from "@/lib/services/api-client";
 
 export async function listRooms(): Promise<Room[]> {
   return apiGet<Room[]>("/api/lecturer/rooms");
+}
+
+export async function listAvailableRooms(startAt: string, endAt: string): Promise<Room[]> {
+  return apiSend<Room[]>("/api/lecturer/rooms/available", "POST", { startAt, endAt });
 }
 
 export async function getRoomById(id: string): Promise<Room | undefined> {
