@@ -16,6 +16,7 @@ import { REQUEST_STATUS_LABELS } from "@/lib/utils/constants";
 export default function RequestsPage() {
   const [requests, setRequests] = useState<BookingRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<RequestStatus | "ALL">("PENDING");
   const [selected, setSelected] = useState<BookingRequest | null>(null);
@@ -24,14 +25,21 @@ export default function RequestsPage() {
   useEffect(() => {
     let active = true;
     async function loadData() {
-      const data = await listRequests({ search, status });
-      if (!active) return;
-      setRequests(data);
-      setLoading(false);
+      setLoading(true);
+      setLoadError("");
+      try {
+        const data = await listRequests({ search, status });
+        if (active) setRequests(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load requests.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
-    void loadData();
+    const timer = window.setTimeout(() => void loadData(), 250);
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
   }, [search, status]);
 
@@ -58,15 +66,17 @@ export default function RequestsPage() {
   );
 
   const handleDecision = async (decision: "APPROVED" | "REJECTED", note?: string) => {
-    if (!selected) return;
+    if (!selected) return false;
     try {
       await decideRequest(selected.id, decision, note);
       showToast("Request updated", `Request was ${decision.toLowerCase()}.`, "success");
       const data = await listRequests({ search, status });
       setRequests(data);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to review request";
       showToast("Review failed", message, "error");
+      return false;
     }
   };
 
@@ -98,6 +108,8 @@ export default function RequestsPage() {
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading requests...</p>
+      ) : loadError ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{loadError}</div>
       ) : requests.length ? (
         <DataTable columns={columns} data={requests} rowKey={(request) => request.id} />
       ) : (

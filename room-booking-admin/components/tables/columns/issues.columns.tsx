@@ -10,7 +10,7 @@ export const issuesColumns: DataColumn<Issue>[] = [
     render: (issue) => (
       <div>
         <p className="font-medium text-slate-900">{issue.title}</p>
-        <p className="text-xs text-slate-500">{issue.roomId}</p>
+        <p className="text-xs text-slate-500">{issue.roomName ?? issue.roomId}</p>
       </div>
     ),
   },

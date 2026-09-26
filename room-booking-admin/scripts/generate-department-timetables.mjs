@@ -21,8 +21,8 @@ for (const department of departments) {
       const cells = Array(6).fill("");
       // The final scope reuses LT1 because 16 schedules share 15 rooms; shift its days to avoid clashes.
       const day = (index + (roomIndex > 15 ? 1 : 0)) % 5;
-      const module = `${department.code}${year}${String(index + 1).padStart(2, "0")}`;
-      cells[day] = `${module}-${room}|${department.lecturers[index % department.lecturers.length]}`;
+      const moduleCode = `${department.code}${year}${String(index + 1).padStart(2, "0")}`;
+      cells[day] = `${moduleCode}-${room}|${department.lecturers[index % department.lecturers.length]}`;
       rows.push(`${time},${cells.join(",")}`);
     });
     writeFileSync(path.join(output, `${department.slug}-year-${year}.csv`), `${rows.join("\n")}\n`);

@@ -1,7 +1,10 @@
-import { errorResponse, json } from "@/lib/server/api";
+import { errorResponse, json, requireAdminApiAuth } from "@/lib/server/api";
 import { deleteTimetableEntries, importTimetableEntries, listTimetableEntries, type TimetableEntryInput } from "@/lib/server/database";
 
 export function GET(request: Request) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   const params = new URL(request.url).searchParams;
   return json(listTimetableEntries({
     department: params.get("department") || undefined,
@@ -10,6 +13,9 @@ export function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json() as { entries?: TimetableEntryInput[] };
     if (!body.entries?.length) throw new Error("No timetable entries were provided");
@@ -21,6 +27,9 @@ export async function POST(request: Request) {
 }
 
 export function DELETE(request: Request) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const params = new URL(request.url).searchParams;
     const deleted = deleteTimetableEntries({

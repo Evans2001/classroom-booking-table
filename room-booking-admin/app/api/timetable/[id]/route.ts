@@ -1,7 +1,10 @@
-import { errorResponse, json } from "@/lib/server/api";
+import { errorResponse, json, requireAdminApiAuth } from "@/lib/server/api";
 import { deleteTimetableEntry, updateTimetableEntry, type TimetableEntryInput } from "@/lib/server/database";
 
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await context.params;
     const input = await request.json() as TimetableEntryInput;
@@ -11,7 +14,10 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await context.params;
     deleteTimetableEntry(id);

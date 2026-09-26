@@ -1,6 +1,26 @@
-const API_BASE = process.env.NEXT_PUBLIC_ROOM_BOOKING_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+import {
+  AUTH_COOKIE_NAME,
+  LECTURER_SESSION_STORAGE_KEYS,
+  isValidLecturerSessionToken,
+} from "@/lib/utils/constants";
 
-async function parseResponse<T>(response: Response): Promise<T> {
+const API_BASE = process.env.NEXT_PUBLIC_ROOM_BOOKING_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+let redirectingToLogin = false;
+
+async function recoverFromExpiredSession(): Promise<void> {
+  if (typeof window === "undefined" || redirectingToLogin) return;
+  redirectingToLogin = true;
+  for (const key of LECTURER_SESSION_STORAGE_KEYS) {
+    sessionStorage.removeItem(key);
+  }
+  try {
+    await fetch("/api/lecturer/auth/logout", { method: "POST" });
+  } finally {
+    window.location.replace("/login?sessionExpired=1");
+  }
+}
+
+async function parseResponse<T>(response: Response, redirectOnUnauthorized = true): Promise<T> {
   if (!response.ok) {
     let message = "Request failed";
     try {
@@ -9,28 +29,12 @@ async function parseResponse<T>(response: Response): Promise<T> {
     } catch {
       // Ignore non-JSON bodies.
     }
+    if (response.status === 401 && redirectOnUnauthorized) {
+      await recoverFromExpiredSession();
+    }
     throw new Error(message);
   }
   return (await response.json()) as T;
-}
-
-function lecturerIdentityHeaders(): HeadersInit {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  const identifier = sessionStorage.getItem("lecturer_account_identifier");
-  const name = sessionStorage.getItem("lecturer_account_name");
-  const department = sessionStorage.getItem("lecturer_account_department");
-  const sessionToken = sessionStorage.getItem("lecturer_session_token");
-  const headers: Record<string, string> = {};
-
-  if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
-  if (identifier) headers["X-Lecturer-Email"] = identifier;
-  if (name) headers["X-Lecturer-Name"] = name;
-  if (department) headers["X-Lecturer-Department"] = department;
-
-  return headers;
 }
 
 function mergeHeaders(...sources: (HeadersInit | undefined)[]): Headers {
@@ -50,20 +54,27 @@ function lecturerProxyHeaders(source?: HeadersInit): HeadersInit {
   }
 
   const incoming = new Headers(source);
-  const headers: Record<string, string> = {};
-  for (const name of ["authorization", "x-lecturer-email", "x-lecturer-name", "x-lecturer-department"]) {
-    const value = incoming.get(name);
-    if (value) headers[name] = value;
+  const cookieHeader = incoming.get("cookie");
+  const sessionToken = cookieHeader
+    ?.split(";")
+    .map((part) => part.trim().split("="))
+    .find(([name]) => name === AUTH_COOKIE_NAME)
+    ?.slice(1)
+    .join("=");
+
+  if (isValidLecturerSessionToken(sessionToken)) {
+    return { Authorization: `Bearer ${sessionToken}` };
   }
-  return headers;
+
+  const authorization = incoming.get("authorization");
+  return authorization ? { Authorization: authorization } : {};
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(path, {
     cache: "no-store",
-    headers: lecturerIdentityHeaders(),
   });
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, !path.includes("/auth/login"));
 }
 
 export async function apiSend<T>(
@@ -73,13 +84,10 @@ export async function apiSend<T>(
 ): Promise<T> {
   const response = await fetch(path, {
     method,
-    headers: {
-      ...lecturerIdentityHeaders(),
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
+    headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  return parseResponse<T>(response);
+  return parseResponse<T>(response, !path.includes("/auth/login"));
 }
 
 export async function proxyToBackend(path: string, init?: RequestInit): Promise<Response> {

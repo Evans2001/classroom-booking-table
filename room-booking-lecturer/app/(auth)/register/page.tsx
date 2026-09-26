@@ -28,6 +28,7 @@ export default function RegisterPage() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     try {
       await submitAccountRequest(form);
@@ -63,6 +64,7 @@ export default function RegisterPage() {
               value={form.name}
               onChange={(event) => update("name", event.target.value)}
               placeholder="Dr. Saman Perera"
+              maxLength={120}
               required
             />
           </Field>
@@ -72,6 +74,7 @@ export default function RegisterPage() {
               value={form.department}
               onChange={(event) => update("department", event.target.value)}
               placeholder="Computer Engineering"
+              maxLength={120}
               required
             />
           </Field>
@@ -81,6 +84,7 @@ export default function RegisterPage() {
               value={form.position}
               onChange={(event) => update("position", event.target.value)}
               placeholder="Senior Lecturer"
+              maxLength={80}
               required
             />
           </Field>
@@ -91,6 +95,8 @@ export default function RegisterPage() {
               value={form.gmail}
               onChange={(event) => update("gmail", event.target.value)}
               placeholder="name@gmail.com"
+              maxLength={254}
+              autoComplete="email"
               required
             />
           </Field>
@@ -100,6 +106,7 @@ export default function RegisterPage() {
               value={form.idNumber}
               onChange={(event) => update("idNumber", event.target.value)}
               placeholder="EMP-001"
+              maxLength={80}
               required
             />
           </Field>

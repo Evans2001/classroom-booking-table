@@ -19,25 +19,38 @@ export default function NewIssuePage() {
   const searchParams = useSearchParams();
   const defaultRoomId = searchParams.get("roomId") ?? undefined;
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await listRooms();
-      setRooms(data);
-      setLoading(false);
+      try {
+        const data = await listRooms();
+        if (active) setRooms(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load rooms.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, []);
 
   const submit = async (input: IssueInput) => {
-    await createIssue(input);
-    showToast("Issue submitted", "Your report has been sent to admin.", "success");
-    router.push("/lecturer/issues");
-    router.refresh();
+    try {
+      await createIssue(input);
+      showToast("Issue submitted", "Your report has been sent to admin.", "success");
+      router.push("/lecturer/issues");
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to submit the issue.";
+      showToast("Issue submission failed", message, "error");
+    }
   };
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-40 sm:pb-24">
       {/* Top Action Bar */}
       <Link href="/lecturer/issues" className="inline-flex items-center text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors">
         <ChevronLeft className="mr-1 h-4 w-4" /> Back to Issues
@@ -62,6 +75,8 @@ export default function NewIssuePage() {
             <div className="h-12 rounded-xl bg-slate-100" />
             <div className="h-24 rounded-xl bg-slate-100" />
           </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{loadError}</div>
         ) : rooms.length ? (
           <IssueReportForm rooms={rooms} defaultRoomId={defaultRoomId} onSubmit={submit} />
         ) : (

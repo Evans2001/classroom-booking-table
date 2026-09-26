@@ -1,17 +1,23 @@
 import { deleteAdminRoom, getAdminRoomById, updateAdminRoom } from "@/lib/server/database";
-import { errorResponse, json, optionsResponse } from "@/lib/server/api";
+import { errorResponse, json, optionsResponse, requireAdminApiAuth } from "@/lib/server/api";
 
 export function OPTIONS() {
   return optionsResponse();
 }
 
-export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   const { id } = await context.params;
   const room = getAdminRoomById(id);
   return room ? json(room) : errorResponse(new Error("Room not found"), 404);
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await context.params;
     const body = await request.json();
@@ -21,7 +27,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 }
 
-export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const { id } = await context.params;
     deleteAdminRoom(id);

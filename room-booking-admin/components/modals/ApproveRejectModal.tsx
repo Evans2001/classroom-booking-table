@@ -7,7 +7,7 @@ interface ApproveRejectModalProps {
   open: boolean;
   onClose: () => void;
   requesterName: string;
-  onSubmit: (decision: "APPROVED" | "REJECTED", note?: string) => Promise<void>;
+  onSubmit: (decision: "APPROVED" | "REJECTED", note?: string) => Promise<boolean>;
 }
 
 export function ApproveRejectModal({
@@ -17,8 +17,7 @@ export function ApproveRejectModal({
   onSubmit,
 }: ApproveRejectModalProps) {
   const handleSubmit = async (decision: "APPROVED" | "REJECTED", note?: string) => {
-    await onSubmit(decision, note);
-    onClose();
+    if (await onSubmit(decision, note)) onClose();
   };
 
   return (

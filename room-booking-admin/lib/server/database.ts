@@ -1,7 +1,8 @@
+import type { AdminUser } from "@/lib/types/user";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 
 import type {
   CreateRoomInput,
@@ -31,14 +32,27 @@ import {
   type EmailNotification,
 } from "@/lib/server/mailer";
 import { sendPushNotification } from "@/lib/server/push";
+import { assertFutureBookingWindow } from "@/lib/utils/booking-date-time";
+import {
+  campusLocalDateTimeToIso,
+  formatCampusDate,
+  formatCampusTime,
+  getCampusWeekdayAndMinute,
+} from "@/lib/utils/campus-date-time";
 
-const DB_DIRECTORY = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DB_DIRECTORY, "room-booking.sqlite");
+export { getMinBookingDateTimeInputValue } from "@/lib/utils/booking-date-time";
+
+const CONFIGURED_DB_PATH = process.env.ROOM_BOOKING_DB_PATH?.trim();
+const DB_PATH = CONFIGURED_DB_PATH === ":memory:"
+  ? ":memory:"
+  : CONFIGURED_DB_PATH
+    ? path.resolve(CONFIGURED_DB_PATH)
+    : path.join(process.cwd(), "data", "room-booking.sqlite");
+const DB_DIRECTORY = path.dirname(DB_PATH);
 const DEMO_LECTURER_NAME = "Demo Lecturer";
 const DEMO_LECTURER_EMAIL = "lecturer@eng.ruh.ac.lk";
 const DEMO_LECTURER_DEPARTMENT = "Computer Science";
 const DEMO_ADMIN_NAME = "System Admin";
-const BOOKING_MIN_DAYS_AHEAD = 7;
 
 type LecturerRoomStatus = "AVAILABLE" | "LIMITED" | "UNAVAILABLE";
 type LecturerIssueStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
@@ -67,6 +81,8 @@ interface LecturerBooking {
   moduleName: string;
   startAt: string;
   endAt: string;
+  startLocal: string;
+  endLocal: string;
   purpose: string;
   attendees: number;
   status: RequestStatus;
@@ -124,6 +140,28 @@ interface IssueInput {
   severity: LecturerIssueSeverity;
   imageUrl?: string;
 }
+
+const ROOM_TYPES = new Set<CreateRoomInput["type"]>([
+  "LECTURE_HALL",
+  "LAB",
+  "MEETING_ROOM",
+]);
+const ROOM_STATUSES = new Set<CreateRoomInput["status"]>([
+  "ACTIVE",
+  "MAINTENANCE",
+  "INACTIVE",
+]);
+const ADMIN_ISSUE_STATUSES = new Set<IssueStatus>([
+  "OPEN",
+  "IN_PROGRESS",
+  "RESOLVED",
+  "CLOSED",
+]);
+const LECTURER_ISSUE_SEVERITIES = new Set<LecturerIssueSeverity>([
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+]);
 
 export type LecturerAccountRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -239,6 +277,7 @@ type IssueRow = {
   severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
   status: LecturerIssueStatus;
   reported_by: string;
+  reporter_email: string | null;
   reported_at: string;
   assigned_to: string | null;
   resolved_at: string | null;
@@ -578,7 +617,9 @@ declare global {
 
 function getDatabase(): DatabaseSync {
   if (!globalThis.__roomBookingDatabase__) {
-    mkdirSync(DB_DIRECTORY, { recursive: true });
+    if (DB_PATH !== ":memory:") {
+      mkdirSync(DB_DIRECTORY, { recursive: true });
+    }
     const database = new DatabaseSync(DB_PATH);
     database.exec(`
       PRAGMA foreign_keys = ON;
@@ -626,6 +667,7 @@ function getDatabase(): DatabaseSync {
         severity TEXT NOT NULL,
         status TEXT NOT NULL,
         reported_by TEXT NOT NULL,
+        reporter_email TEXT,
         reported_at TEXT NOT NULL,
         assigned_to TEXT,
         resolved_at TEXT,
@@ -720,9 +762,13 @@ function getDatabase(): DatabaseSync {
     `);
     try { database.exec("ALTER TABLE timetable_entries ADD COLUMN batch TEXT NOT NULL DEFAULT ''"); } catch { /* Existing column. */ }
     try { database.exec("ALTER TABLE timetable_entries ADD COLUMN lecturer_id TEXT NOT NULL DEFAULT ''"); } catch { /* Existing column. */ }
-    seedIfNeeded(database);
+    try { database.exec("ALTER TABLE issues ADD COLUMN reporter_email TEXT"); } catch { /* Existing column. */ }
+    if (process.env.NODE_ENV !== "production") {
+      seedIfNeeded(database);
+    }
     ensureRealFacultyRooms(database);
-    ensureDefaultAccounts(database);
+    ensureDevelopmentDemoAccount(database);
+    backfillIssueReporterEmails(database);
     globalThis.__roomBookingDatabase__ = database;
   }
 
@@ -753,8 +799,36 @@ function ensureSessionTable(database: DatabaseSync): void {
   `);
 }
 
+function backfillIssueReporterEmails(database: DatabaseSync): void {
+  const legacyReporters = database
+    .prepare("SELECT DISTINCT reported_by FROM issues WHERE reporter_email IS NULL")
+    .all() as Array<{ reported_by: string }>;
+  const accountsByName = database.prepare("SELECT gmail FROM lecturer_accounts WHERE name = ?");
+  const updateReporter = database.prepare(
+    "UPDATE issues SET reporter_email = ? WHERE reporter_email IS NULL AND reported_by = ?",
+  );
+
+  for (const reporter of legacyReporters) {
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reporter.reported_by)) {
+      updateReporter.run(normalizeEmail(reporter.reported_by), reporter.reported_by);
+      continue;
+    }
+    const matches = accountsByName.all(reporter.reported_by) as Array<{ gmail: string }>;
+    if (matches.length === 1) updateReporter.run(matches[0].gmail, reporter.reported_by);
+  }
+}
+
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function isSeededDemoLecturerAccount(account: LecturerAccountRow): boolean {
+  return (
+    account.id === "lecturer-demo" &&
+    account.request_id === null &&
+    account.id_number === "DEMO-001" &&
+    normalizeEmail(account.gmail) === DEMO_LECTURER_EMAIL
+  );
 }
 
 function hashPassword(password: string): string {
@@ -818,7 +892,7 @@ function insertEmail(database: DatabaseSync, recipient: string, subject: string,
     .run(`mail-${randomUUID()}`, recipient, subject, body, now, now);
 }
 
-function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): LecturerIdentity {
+function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): LecturerIdentity & { sessionToken: string } {
   const sessionToken = identity?.sessionToken?.trim();
   if (sessionToken) {
     const row = getDatabase()
@@ -832,7 +906,10 @@ function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): Lecturer
       )
       .get(sessionToken, new Date().toISOString()) as LecturerAccountRow | undefined;
 
-    if (!row) {
+    if (
+      !row ||
+      (process.env.NODE_ENV === "production" && isSeededDemoLecturerAccount(row))
+    ) {
       throw new Error("Invalid lecturer session.");
     }
 
@@ -846,6 +923,10 @@ function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): Lecturer
   }
 
   throw new Error("Lecturer login required.");
+}
+
+export function assertLecturerSession(identity?: Partial<LecturerIdentity>): void {
+  resolveLecturerIdentity(identity);
 }
 
 async function sendAndArchiveNotification(
@@ -880,10 +961,10 @@ function findLecturerEmailByName(database: DatabaseSync, name: string): string |
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name)) {
     return normalizeEmail(name);
   }
-  const row = database
+  const rows = database
     .prepare("SELECT gmail FROM lecturer_accounts WHERE name = ?")
-    .get(name) as { gmail: string } | undefined;
-  return row?.gmail;
+    .all(name) as Array<{ gmail: string }>;
+  return rows.length === 1 ? rows[0].gmail : undefined;
 }
 
 function listLecturerPushTokensByEmail(email: string): string[] {
@@ -893,7 +974,12 @@ function listLecturerPushTokensByEmail(email: string): string[] {
   return rows.map((row) => row.token);
 }
 
-function ensureDefaultAccounts(database: DatabaseSync) {
+function ensureDevelopmentDemoAccount(database: DatabaseSync): void {
+  database.exec("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+  if (database.prepare("SELECT value FROM app_settings WHERE key = 'demo_account_deleted'").get()) return;
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
   const existing = database
     .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ?")
     .get(DEMO_LECTURER_EMAIL) as { id: string } | undefined;
@@ -976,12 +1062,16 @@ function seedIfNeeded(database: DatabaseSync) {
   `);
 
   for (const item of seededRequests) {
+    const roomId = roomIdsByCode.get(item.roomCode);
+    if (!roomId) {
+      throw new Error(`Seed room ${item.roomCode} was not found.`);
+    }
     insertRequest.run(
       item.id,
       item.requesterName,
       item.requesterEmail,
       item.department,
-      roomIdsByCode.get(item.roomCode),
+      roomId,
       item.moduleName,
       item.purpose,
       item.startAt,
@@ -1006,6 +1096,9 @@ function seedIfNeeded(database: DatabaseSync) {
   `);
   for (const issue of seededIssues) {
     const roomId = roomIdsByCode.get(issue.roomCode);
+    if (!roomId) {
+      throw new Error(`Seed room ${issue.roomCode} was not found.`);
+    }
     insertIssue.run(
       issue.id,
       roomId,
@@ -1044,16 +1137,11 @@ function mapRoomRow(row: RoomRow): AdminRoom {
 }
 
 function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return formatCampusDate(date);
 }
 
 function formatLocalTime(date: Date): string {
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${hours}:${minutes}`;
+  return formatCampusTime(date);
 }
 
 function mapBookingRowToAdminRequest(row: BookingRow): BookingRequest {
@@ -1125,6 +1213,8 @@ function mapBookingRowToLecturerBooking(row: BookingRow): LecturerBooking {
     moduleName: row.module_name ?? "General Booking",
     startAt: row.start_at,
     endAt: row.end_at,
+    startLocal: `${formatLocalDate(new Date(row.start_at))}T${formatLocalTime(new Date(row.start_at))}`,
+    endLocal: `${formatLocalDate(new Date(row.end_at))}T${formatLocalTime(new Date(row.end_at))}`,
     purpose: row.purpose,
     attendees: row.attendees,
     status: row.status,
@@ -1144,6 +1234,7 @@ function mapIssueRowToAdminIssue(row: IssueRow): AdminIssue {
   return {
     id: row.id,
     roomId: row.room_id,
+    roomName: row.room_name,
     title: row.title,
     description: row.description,
     severity: row.severity,
@@ -1204,7 +1295,7 @@ function mapLecturerAccountRow(row: LecturerAccountRow): LecturerAccount {
   };
 }
 
-function listBookingRows(whereClause = "", params: unknown[] = []): BookingRow[] {
+function listBookingRows(whereClause = "", params: SQLInputValue[] = []): BookingRow[] {
   const database = getDatabase();
   const query = `
     SELECT
@@ -1224,7 +1315,7 @@ function getIssueUpdates(issueId: string): LecturerIssueUpdate[] {
   return (
     database
       .prepare("SELECT status, note, at FROM issue_updates WHERE issue_id = ? ORDER BY at DESC")
-      .all(issueId) as LecturerIssueUpdate[]
+      .all(issueId) as unknown as LecturerIssueUpdate[]
   );
 }
 
@@ -1260,31 +1351,62 @@ function overlapExists(
 }
 
 function assertValidBookingInput(input: BookingInput) {
-  const startAt = new Date(input.startAt);
-  const endAt = new Date(input.endAt);
-  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) {
-    throw new Error("Choose valid start and end date/time.");
+  if (!input.roomId?.trim() || !input.moduleName?.trim() || !input.purpose?.trim()) {
+    throw new Error("Room, module name, and purpose are required.");
   }
-  if (endAt <= startAt) {
-    throw new Error("End date/time must be after start date/time.");
+  if (!Number.isInteger(input.attendees) || input.attendees < 1) {
+    throw new Error("Attendees must be a positive whole number.");
   }
-
-  const minAllowed = new Date();
-  minAllowed.setHours(0, 0, 0, 0);
-  minAllowed.setDate(minAllowed.getDate() + BOOKING_MIN_DAYS_AHEAD);
-  if (startAt < minAllowed) {
-    throw new Error(`Bookings must be made at least ${BOOKING_MIN_DAYS_AHEAD} days in advance.`);
+  if (input.moduleName.trim().length > 100 || input.purpose.trim().length > 500) {
+    throw new Error("Booking details exceed the maximum supported length.");
   }
+  assertFutureBookingWindow(input.startAt, input.endAt);
 }
 
-export function getMinBookingDateTimeInputValue(): string {
-  const min = new Date();
-  min.setHours(0, 0, 0, 0);
-  min.setDate(min.getDate() + BOOKING_MIN_DAYS_AHEAD);
-  const year = min.getFullYear();
-  const month = `${min.getMonth() + 1}`.padStart(2, "0");
-  const day = `${min.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}T00:00`;
+function normalizeAdminRoomInput(input: Partial<CreateRoomInput>): CreateRoomInput {
+  const code = typeof input.code === "string" ? input.code.trim() : "";
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const building = typeof input.building === "string" ? input.building.trim() : "";
+  if (!code || !name || !building) {
+    throw new Error("Room code, name, and building are required.");
+  }
+  if (code.length > 30 || name.length > 120 || building.length > 120) {
+    throw new Error("Room details exceed the maximum supported length.");
+  }
+  if (!Number.isInteger(input.floor) || Number(input.floor) < 0) {
+    throw new Error("Floor must be a non-negative whole number.");
+  }
+  if (!Number.isInteger(input.capacity) || Number(input.capacity) < 1) {
+    throw new Error("Capacity must be a positive whole number.");
+  }
+  if (!ROOM_TYPES.has(input.type as CreateRoomInput["type"])) {
+    throw new Error("Choose a valid room type.");
+  }
+  if (!ROOM_STATUSES.has(input.status as CreateRoomInput["status"])) {
+    throw new Error("Choose a valid room status.");
+  }
+  if (typeof input.hasProjector !== "boolean" || typeof input.hasAc !== "boolean") {
+    throw new Error("Room facilities must be true or false.");
+  }
+
+  return {
+    code,
+    name,
+    building,
+    floor: input.floor as number,
+    capacity: input.capacity as number,
+    type: input.type as CreateRoomInput["type"],
+    hasProjector: input.hasProjector,
+    hasAc: input.hasAc,
+    status: input.status as CreateRoomInput["status"],
+  };
+}
+
+function assertRoomCodeAvailable(database: DatabaseSync, code: string, excludeId?: string): void {
+  const duplicate = database
+    .prepare("SELECT id FROM rooms WHERE lower(code) = lower(?) AND (? IS NULL OR id <> ?)")
+    .get(code, excludeId ?? null, excludeId ?? null) as { id: string } | undefined;
+  if (duplicate) throw new Error(`A room with code ${code} already exists.`);
 }
 
 export function listAdminRooms(filters?: RoomFilters): AdminRoom[] {
@@ -1318,11 +1440,14 @@ export function getAdminRoomById(id: string): AdminRoom | undefined {
 
 export function createAdminRoom(input: CreateRoomInput): AdminRoom {
   const database = getDatabase();
+  const normalized = normalizeAdminRoomInput(input);
+  assertRoomCodeAvailable(database, normalized.code);
+  const now = new Date().toISOString();
   const room: AdminRoom = {
     id: `room-${randomUUID()}`,
-    ...input,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    ...normalized,
+    createdAt: now,
+    updatedAt: now,
   };
   database
     .prepare(
@@ -1354,9 +1479,11 @@ export function updateAdminRoom(id: string, patch: UpdateRoomInput): AdminRoom {
   if (!current) {
     throw new Error("Room not found");
   }
+  const normalized = normalizeAdminRoomInput({ ...current, ...patch });
+  assertRoomCodeAvailable(getDatabase(), normalized.code, id);
   const updated: AdminRoom = {
     ...current,
-    ...patch,
+    ...normalized,
     updatedAt: new Date().toISOString(),
   };
   getDatabase()
@@ -1384,7 +1511,9 @@ export function updateAdminRoom(id: string, patch: UpdateRoomInput): AdminRoom {
 }
 
 export function deleteAdminRoom(id: string): void {
-  const result = getDatabase().prepare("DELETE FROM rooms WHERE id = ?").run(id);
+  const result = getDatabase()
+    .prepare("UPDATE rooms SET status = 'INACTIVE', updated_at = ? WHERE id = ?")
+    .run(new Date().toISOString(), id);
   if (result.changes === 0) {
     throw new Error("Room not found");
   }
@@ -1417,6 +1546,12 @@ export async function decideAdminRequest(
   decision: "APPROVED" | "REJECTED",
   note?: string,
 ): Promise<BookingRequest> {
+  if ((note?.trim().length ?? 0) > 500) {
+    throw new Error("Review notes cannot exceed 500 characters.");
+  }
+  if (decision !== "APPROVED" && decision !== "REJECTED") {
+    throw new Error("Choose approve or reject.");
+  }
   const current = getAdminRequestById(id);
   if (!current) {
     throw new Error("Request not found");
@@ -1465,7 +1600,7 @@ export async function decideAdminRequest(
 }
 
 function minutes(value: string): number {
-  const match = value.trim().match(/^(\d{1,2}):(\d{2})/);
+  const match = value.trim().match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
   if (!match) return Number.NaN;
   return Number(match[1]) * 60 + Number(match[2]);
 }
@@ -1473,13 +1608,13 @@ function minutes(value: string): number {
 function timetableOverlapExists(roomCode: string, startAt: string, endAt: string): boolean {
   const start = new Date(startAt);
   const end = new Date(endAt);
-  const day = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][start.getDay()];
-  const startMinute = start.getHours() * 60 + start.getMinutes();
-  const endMinute = end.getHours() * 60 + end.getMinutes();
+  const startCampus = getCampusWeekdayAndMinute(start);
+  const endCampus = getCampusWeekdayAndMinute(end);
+  if (startCampus.weekday !== endCampus.weekday) return true;
   const rows = getDatabase().prepare(
     "SELECT start_time, end_time FROM timetable_entries WHERE lower(room_code) = lower(?) AND day_of_week = ?",
-  ).all(roomCode, day) as Array<{ start_time: string; end_time: string }>;
-  return rows.some((row) => startMinute < minutes(row.end_time) && minutes(row.start_time) < endMinute);
+  ).all(roomCode, startCampus.weekday) as Array<{ start_time: string; end_time: string }>;
+  return rows.some((row) => startCampus.minute < minutes(row.end_time) && minutes(row.start_time) < endCampus.minute);
 }
 
 export function listTimetableEntries(filters?: { department?: string; lecturer?: string }): TimetableEntry[] {
@@ -1596,8 +1731,8 @@ export function createImportedAdminRequests(rows: ImportedRow[]): BookingRequest
       row.roomId,
       null,
       row.purpose,
-      `${row.date}T${row.startTime}:00.000Z`,
-      `${row.date}T${row.endTime}:00.000Z`,
+      campusLocalDateTimeToIso(row.date, row.startTime),
+      campusLocalDateTimeToIso(row.date, row.endTime),
       row.attendees,
       "PENDING",
       now,
@@ -1662,6 +1797,12 @@ export function getAdminIssueById(id: string): AdminIssue | undefined {
 }
 
 export async function updateAdminIssueStatus(id: string, status: IssueStatus, note?: string): Promise<AdminIssue> {
+  if ((note?.trim().length ?? 0) > 1_000) {
+    throw new Error("Issue notes cannot exceed 1000 characters.");
+  }
+  if (!ADMIN_ISSUE_STATUSES.has(status)) {
+    throw new Error("Choose a valid issue status.");
+  }
   const current = getAdminIssueById(id);
   if (!current) {
     throw new Error("Issue not found");
@@ -1691,12 +1832,15 @@ export async function updateAdminIssueStatus(id: string, status: IssueStatus, no
   if (!updated) {
     throw new Error("Issue not found");
   }
+  const owner = database
+    .prepare("SELECT reporter_email FROM issues WHERE id = ?")
+    .get(id) as { reporter_email: string | null } | undefined;
   await sendAndArchiveNotification(
     database,
-    findLecturerEmailByName(database, updated.reportedBy),
+    owner?.reporter_email ?? findLecturerEmailByName(database, updated.reportedBy),
     buildIssueStatusEmail({
       lecturerName: updated.reportedBy,
-      roomName: updated.roomId,
+      roomName: updated.roomName ?? updated.roomId,
       title: updated.title,
       status,
       note: note?.trim() || undefined,
@@ -1722,6 +1866,15 @@ function validateLecturerAccountRequestInput(input: LecturerAccountRequestInput)
   };
   if (!normalized.name || !normalized.department || !normalized.position || !normalized.gmail || !normalized.idNumber) {
     throw new Error("Please fill all required lecturer details.");
+  }
+  if (
+    normalized.name.length > 120 ||
+    normalized.department.length > 120 ||
+    normalized.position.length > 80 ||
+    normalized.gmail.length > 254 ||
+    normalized.idNumber.length > 80
+  ) {
+    throw new Error("Lecturer account details exceed the maximum supported length.");
   }
   if (!/^[^\s@]+@gmail\.com$/i.test(normalized.gmail)) {
     throw new Error("Please enter a valid Gmail address.");
@@ -1790,6 +1943,9 @@ export async function decideLecturerAccountRequest(
   decision: "APPROVED" | "REJECTED",
   note?: string,
 ): Promise<LecturerAccountRequest> {
+  if ((note?.trim().length ?? 0) > 500) {
+    throw new Error("Review notes cannot exceed 500 characters.");
+  }
   const database = getDatabase();
   const current = database
     .prepare("SELECT * FROM lecturer_account_requests WHERE id = ?")
@@ -1828,6 +1984,11 @@ export async function decideLecturerAccountRequest(
       username,
       temporaryPassword,
     });
+    if (process.env.NODE_ENV === "production" && !mailResult.sent) {
+      throw new Error(
+        "Unable to deliver lecturer credentials. Check the production SMTP configuration and try again.",
+      );
+    }
     database
       .prepare(
         `
@@ -1855,7 +2016,9 @@ export async function decideLecturerAccountRequest(
       database,
       current.gmail,
       credentialsEmail.subject,
-      credentialsEmail.text,
+      process.env.NODE_ENV === "production"
+        ? "Lecturer credentials were delivered by email. The temporary password is not retained."
+        : credentialsEmail.text,
     );
     reviewNote =
       note?.trim() ||
@@ -1888,52 +2051,85 @@ export async function decideLecturerAccountRequest(
   return mapLecturerAccountRequestRow(updated);
 }
 
-export function authenticateLecturerAccount(identifier: string, password: string): LecturerAccount {
-  const database = getDatabase();
+function lecturerAccountForCredentials(
+  database: DatabaseSync,
+  identifier: string,
+  password: string,
+): LecturerAccountRow {
+  if (
+    !identifier.trim() ||
+    identifier.length > 254 ||
+    !password ||
+    password.length > 128
+  ) {
+    throw new Error("Invalid lecturer credentials.");
+  }
   const normalized = normalizeEmail(identifier);
   const row = database
     .prepare("SELECT * FROM lecturer_accounts WHERE gmail = ? OR username = ?")
     .get(normalized, identifier.trim()) as LecturerAccountRow | undefined;
-  if (!row || !verifyPassword(password, row.password_hash)) {
+  if (
+    !row ||
+    (process.env.NODE_ENV === "production" && isSeededDemoLecturerAccount(row)) ||
+    !verifyPassword(password, row.password_hash)
+  ) {
     throw new Error("Invalid lecturer credentials.");
   }
+  return row;
+}
+
+export function authenticateLecturerAccount(identifier: string, password: string): LecturerAccount {
+  const database = getDatabase();
+  const row = lecturerAccountForCredentials(database, identifier, password);
   return {
     ...mapLecturerAccountRow(row),
     sessionToken: createLecturerSession(database, row.id),
   };
 }
 
-export function changeLecturerPassword(identifier: string, currentPassword: string, nextPassword: string): LecturerAccount {
-  if (nextPassword.length < 8) {
-    throw new Error("New password must be at least 8 characters.");
+export function revokeLecturerSession(sessionToken: string): void {
+  const token = sessionToken?.trim();
+  if (!token) throw new Error("Lecturer login required.");
+  resolveLecturerIdentity({ sessionToken: token });
+  getDatabase().prepare("DELETE FROM lecturer_sessions WHERE token = ?").run(token);
+}
+
+export function changeLecturerPassword(
+  currentPassword: string,
+  nextPassword: string,
+  identity?: Partial<LecturerIdentity>,
+): LecturerAccount {
+  if (nextPassword.length < 8 || nextPassword.length > 128) {
+    throw new Error("New password must contain between 8 and 128 characters.");
   }
-  const account = authenticateLecturerAccount(identifier, currentPassword);
+  const database = getDatabase();
+  const lecturer = resolveLecturerIdentity(identity);
+  const account = lecturerAccountForCredentials(database, lecturer.email, currentPassword);
   const now = new Date().toISOString();
-  getDatabase()
+  database
     .prepare(
       "UPDATE lecturer_accounts SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
     )
     .run(hashPassword(nextPassword), now, account.id);
-  const row = getDatabase()
+  database
+    .prepare("DELETE FROM lecturer_sessions WHERE lecturer_account_id = ? AND token <> ?")
+    .run(account.id, lecturer.sessionToken);
+  const row = database
     .prepare("SELECT * FROM lecturer_accounts WHERE id = ?")
     .get(account.id) as LecturerAccountRow;
   return mapLecturerAccountRow(row);
 }
 
 export function registerLecturerPushToken(input: {
-  lecturerEmail: string;
   token: string;
   platform?: string;
-  sessionToken?: string;
+  sessionToken: string;
 }): void {
-  const lecturerEmail = input.sessionToken
-    ? resolveLecturerIdentity({ sessionToken: input.sessionToken }).email
-    : normalizeEmail(input.lecturerEmail ?? "");
+  const lecturerEmail = resolveLecturerIdentity({ sessionToken: input.sessionToken }).email;
   const token = input.token?.trim();
   const platform = input.platform?.trim() || "android";
-  if (!lecturerEmail || !token) {
-    throw new Error("Lecturer email and push token are required.");
-  }
+  if (!token) throw new Error("Push token is required.");
+  if (token.length > 4_096 || platform.length > 40) throw new Error("Push token details are invalid.");
   const database = getDatabase();
   const account = database
     .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ?")
@@ -1960,37 +2156,41 @@ export function registerLecturerPushToken(input: {
     .run(`push-${randomUUID()}`, lecturerEmail, token, platform, now, now);
 }
 
-export function listLecturerRooms(): LecturerRoom[] {
+export function unregisterLecturerPushToken(input: {
+  token: string;
+  sessionToken: string;
+}): void {
+  const lecturerEmail = resolveLecturerIdentity({ sessionToken: input.sessionToken }).email;
+  const token = input.token?.trim();
+  if (!token || token.length > 4_096) {
+    throw new Error("Push token is invalid.");
+  }
+  getDatabase()
+    .prepare("DELETE FROM lecturer_push_tokens WHERE token = ? AND lecturer_email = ?")
+    .run(token, lecturerEmail);
+}
+
+export function listLecturerRooms(identity?: Partial<LecturerIdentity>): LecturerRoom[] {
+  resolveLecturerIdentity(identity);
   return listAdminRooms().map(adminRoomToLecturerRoom);
 }
 
-export function listAvailableLecturerRooms(startAt: string, endAt: string): LecturerRoom[] {
-  return listLecturerRooms().filter((room) => {
+export function listAvailableLecturerRooms(
+  startAt: string,
+  endAt: string,
+  identity?: Partial<LecturerIdentity>,
+): LecturerRoom[] {
+  return listLecturerRooms(identity).filter((room) => {
     const availability = checkLecturerRoomAvailability({ roomId: room.id, startAt, endAt });
     return availability.available && !availability.requiresApproval;
   });
 }
 
-function moveOverlappingLecturerBookingsToReview(roomId: string, startAt: string, endAt: string): number {
-  const nextStart = new Date(startAt).getTime();
-  const nextEnd = new Date(endAt).getTime();
-  const rows = getDatabase().prepare(`
-    SELECT id, start_at, end_at
-    FROM booking_requests
-    WHERE room_id = ? AND source = 'lecturer' AND status = 'APPROVED'
-  `).all(roomId) as Array<{ id: string; start_at: string; end_at: string }>;
-  const conflicts = rows.filter((row) => nextStart < new Date(row.end_at).getTime()
-    && new Date(row.start_at).getTime() < nextEnd);
-  const update = getDatabase().prepare(`
-    UPDATE booking_requests
-    SET status = 'PENDING', reviewer_note = 'Another lecturer requested the same room and time; admin review required.'
-    WHERE id = ?
-  `);
-  for (const conflict of conflicts) update.run(conflict.id);
-  return conflicts.length;
-}
-
-export function getLecturerRoomById(id: string): LecturerRoom | undefined {
+export function getLecturerRoomById(
+  id: string,
+  identity?: Partial<LecturerIdentity>,
+): LecturerRoom | undefined {
+  resolveLecturerIdentity(identity);
   const room = getAdminRoomById(id);
   return room ? adminRoomToLecturerRoom(room) : undefined;
 }
@@ -2048,11 +2248,11 @@ export async function createLecturerBooking(input: BookingInput, identity?: Part
   if (!room) {
     throw new Error("Selected room not found");
   }
+  if (input.attendees > room.capacity) {
+    throw new Error(`Attendance exceeds the ${room.capacity}-seat room capacity.`);
+  }
   const id = `bk-${randomUUID()}`;
   const submittedAt = new Date().toISOString();
-  if (availability.requiresApproval) {
-    moveOverlappingLecturerBookingsToReview(input.roomId, input.startAt, input.endAt);
-  }
   getDatabase()
     .prepare(
       `
@@ -2068,8 +2268,8 @@ export async function createLecturerBooking(input: BookingInput, identity?: Part
       lecturer.email,
       lecturer.department,
       input.roomId,
-      input.moduleName,
-      input.purpose,
+      input.moduleName.trim(),
+      input.purpose.trim(),
       new Date(input.startAt).toISOString(),
       new Date(input.endAt).toISOString(),
       input.attendees,
@@ -2103,6 +2303,9 @@ export function updateLecturerBooking(id: string, input: BookingInput, identity?
   if (!current) {
     throw new Error("Booking not found");
   }
+  if (current.status === "CANCELLED" || new Date(current.startAt) <= new Date()) {
+    throw new Error("Started or cancelled bookings cannot be edited.");
+  }
   assertValidBookingInput(input);
   const availability = checkLecturerRoomAvailability({ ...input, excludeBookingId: id });
   if (!availability.available) {
@@ -2112,23 +2315,29 @@ export function updateLecturerBooking(id: string, input: BookingInput, identity?
   if (!room) {
     throw new Error("Selected room not found");
   }
+  if (input.attendees > room.capacity) {
+    throw new Error(`Attendance exceeds the ${room.capacity}-seat room capacity.`);
+  }
   getDatabase()
     .prepare(
       `
         UPDATE booking_requests
-        SET room_id = ?, module_name = ?, purpose = ?, start_at = ?, end_at = ?, attendees = ?, status = ?, submitted_at = ?, reviewer_note = NULL, reviewer = NULL, reviewed_at = NULL
+        SET room_id = ?, module_name = ?, purpose = ?, start_at = ?, end_at = ?, attendees = ?, status = ?, submitted_at = ?, reviewer_note = ?, reviewer = NULL, reviewed_at = NULL
         WHERE id = ? AND requester_email = ?
       `,
     )
     .run(
       input.roomId,
-      input.moduleName,
-      input.purpose,
+      input.moduleName.trim(),
+      input.purpose.trim(),
       new Date(input.startAt).toISOString(),
       new Date(input.endAt).toISOString(),
       input.attendees,
-      "PENDING",
+      availability.requiresApproval ? "PENDING" : "APPROVED",
       new Date().toISOString(),
+      availability.requiresApproval
+        ? "Conflict detected; admin review required."
+        : "Automatically approved because the room is available.",
       id,
       lecturer.email,
     );
@@ -2142,10 +2351,14 @@ export function updateLecturerBooking(id: string, input: BookingInput, identity?
 export function deleteLecturerBooking(id: string, identity?: Partial<LecturerIdentity>): void {
   const lecturer = resolveLecturerIdentity(identity);
   const result = getDatabase()
-    .prepare("DELETE FROM booking_requests WHERE id = ? AND requester_email = ?")
-    .run(id, lecturer.email);
+    .prepare(
+      `UPDATE booking_requests
+       SET status = 'CANCELLED', reviewer_note = 'Cancelled by lecturer.', reviewed_at = ?
+       WHERE id = ? AND requester_email = ? AND end_at > ?`,
+    )
+    .run(new Date().toISOString(), id, lecturer.email, new Date().toISOString());
   if (result.changes === 0) {
-    throw new Error("Booking not found");
+    throw new Error("Booking not found or it can no longer be cancelled.");
   }
 }
 
@@ -2157,11 +2370,11 @@ export function listLecturerIssues(identity?: Partial<LecturerIdentity>): Lectur
         SELECT i.*, r.name as room_name
         FROM issues i
         JOIN rooms r ON r.id = i.room_id
-        WHERE i.reported_by = ?
+        WHERE i.reporter_email = ?
         ORDER BY i.reported_at DESC
       `,
     )
-    .all(lecturer.name) as IssueRow[];
+    .all(lecturer.email) as IssueRow[];
   return rows.map((row) => mapIssueRowToLecturerIssue(row, getIssueUpdates(row.id)));
 }
 
@@ -2173,15 +2386,24 @@ export function getLecturerIssueById(id: string, identity?: Partial<LecturerIden
         SELECT i.*, r.name as room_name
         FROM issues i
         JOIN rooms r ON r.id = i.room_id
-        WHERE i.id = ? AND i.reported_by = ?
+        WHERE i.id = ? AND i.reporter_email = ?
       `,
     )
-    .get(id, lecturer.name) as IssueRow | undefined;
+    .get(id, lecturer.email) as IssueRow | undefined;
   return row ? mapIssueRowToLecturerIssue(row, getIssueUpdates(id)) : undefined;
 }
 
 export async function createLecturerIssue(input: IssueInput, identity?: Partial<LecturerIdentity>): Promise<LecturerIssue> {
   const lecturer = resolveLecturerIdentity(identity);
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  const description = typeof input.description === "string" ? input.description.trim() : "";
+  if (!title || !description) throw new Error("Issue title and description are required.");
+  if (title.length > 120 || description.length > 2_000) {
+    throw new Error("Issue details exceed the maximum supported length.");
+  }
+  if (!LECTURER_ISSUE_SEVERITIES.has(input.severity)) {
+    throw new Error("Choose a valid issue severity.");
+  }
   const room = getAdminRoomById(input.roomId);
   if (!room) {
     throw new Error("Room not found");
@@ -2192,11 +2414,11 @@ export async function createLecturerIssue(input: IssueInput, identity?: Partial<
     .prepare(
       `
         INSERT INTO issues (
-          id, room_id, title, description, severity, status, reported_by, reported_at, image_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, room_id, title, description, severity, status, reported_by, reporter_email, reported_at, image_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
-    .run(id, input.roomId, input.title, input.description, input.severity, "OPEN", lecturer.name, createdAt, input.imageUrl ?? null);
+    .run(id, input.roomId, title, description, input.severity, "OPEN", lecturer.name, lecturer.email, createdAt, input.imageUrl ?? null);
   getDatabase()
     .prepare("INSERT INTO issue_updates (id, issue_id, status, note, at) VALUES (?, ?, ?, ?, ?)")
     .run(randomUUID(), id, "OPEN", "Issue submitted from lecturer mobile app.", createdAt);
@@ -2214,4 +2436,37 @@ export async function createLecturerIssue(input: IssueInput, identity?: Partial<
     }),
   );
   return issue;
+}
+
+export function listAdminUsers(): AdminUser[] {
+  return getDatabase().prepare(`
+    SELECT id, name, gmail, department, position, id_number AS idNumber,
+      username, created_at AS createdAt
+    FROM lecturer_accounts ORDER BY created_at DESC, name ASC
+  `).all() as unknown as AdminUser[];
+}
+
+export function deleteAdminUser(id: string): boolean {
+  const database = getDatabase();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const account = database.prepare("SELECT gmail FROM lecturer_accounts WHERE id = ?").get(id) as { gmail: string } | undefined;
+    if (!account) {
+      database.exec("ROLLBACK");
+      return false;
+    }
+    database.prepare("DELETE FROM lecturer_sessions WHERE lecturer_account_id = ?").run(id);
+    database.prepare("DELETE FROM lecturer_push_tokens WHERE lecturer_email = ?").run(account.gmail);
+    database.prepare("DELETE FROM lecturer_accounts WHERE id = ?").run(id);
+    // Keep the development seed from recreating a deleted account on restart.
+    if (account.gmail === DEMO_LECTURER_EMAIL) {
+      database.exec("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+      database.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('demo_account_deleted', 'true')").run();
+    }
+    database.exec("COMMIT");
+    return true;
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
