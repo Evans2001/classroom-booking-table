@@ -2051,7 +2051,8 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       selectedRoom = availableRooms.first;
     }
 
-    final initialStart = widget.booking?.startAt ?? nextWholeHour(campusNow());
+    final initialStart = widget.booking?.startAt ??
+        nextWholeHour(campusNow().add(const Duration(hours: 1)));
     final initialEnd =
         widget.booking?.endAt ?? initialStart.add(const Duration(hours: 1));
     selectedDate = DateUtils.dateOnly(initialStart);
@@ -2120,9 +2121,11 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       );
       return;
     }
-    if (!start.isAfter(campusNow())) {
+    if (start.isBefore(campusNow().add(const Duration(hours: 1)))) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Start time must be in the future.')),
+        const SnackBar(
+          content: Text('Bookings must be requested at least 1 hour before the start time.'),
+        ),
       );
       return;
     }
