@@ -297,9 +297,7 @@ String get apiBaseUrl {
   final configured = _configuredApiBaseUrl.trim();
   if (configured.isNotEmpty) {
     if (kReleaseMode && !configured.toLowerCase().startsWith('https://')) {
-      throw const ApiException(
-        'Release builds require an HTTPS API_BASE_URL.',
-      );
+      throw const ApiException('Release builds require an HTTPS API_BASE_URL.');
     }
     return configured.endsWith('/')
         ? configured.substring(0, configured.length - 1)
@@ -575,10 +573,7 @@ Future<Map<String, dynamic>> changeLecturerAccountPassword({
   final response = await apiRequest(
     '/api/lecturer/auth/change-password',
     method: 'POST',
-    body: {
-      'currentPassword': currentPassword,
-      'nextPassword': nextPassword,
-    },
+    body: {'currentPassword': currentPassword, 'nextPassword': nextPassword},
   );
   return response as Map<String, dynamic>;
 }
@@ -1171,7 +1166,6 @@ class _LecturerHomeState extends State<LecturerHome> {
   final pages = const [
     DashboardScreen(),
     RoomsScreen(),
-    BookingsScreen(),
     CalendarScreen(),
     IssuesScreen(),
     ProfileScreen(),
@@ -1180,7 +1174,6 @@ class _LecturerHomeState extends State<LecturerHome> {
   final titles = const [
     'Lecturer Dashboard',
     'Rooms',
-    'My Bookings',
     'Calendar',
     'My Issues',
     'Profile',
@@ -1315,13 +1308,7 @@ class _LecturerHomeState extends State<LecturerHome> {
         ],
       ),
       body: RefreshIndicator(onRefresh: refreshData, child: pages[index]),
-      floatingActionButton: index == 2
-          ? FloatingActionButton.extended(
-              onPressed: () => openBookingForm(context),
-              icon: const Icon(Icons.add),
-              label: const Text('Book'),
-            )
-          : index == 4
+      floatingActionButton: index == 3
           ? FloatingActionButton.extended(
               onPressed: () => openIssueForm(context),
               icon: const Icon(Icons.add_alert_outlined),
@@ -1336,10 +1323,6 @@ class _LecturerHomeState extends State<LecturerHome> {
           NavigationDestination(
             icon: Icon(Icons.meeting_room_outlined),
             label: 'Rooms',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.event_note_outlined),
-            label: 'Bookings',
           ),
           NavigationDestination(
             icon: Icon(Icons.calendar_month_outlined),
@@ -1362,10 +1345,15 @@ class _LecturerHomeState extends State<LecturerHome> {
     BuildContext context, {
     Room? room,
     Booking? booking,
+    DateTime? initialDate,
   }) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => BookingFormScreen(defaultRoom: room, booking: booking),
+        builder: (_) => BookingFormScreen(
+          defaultRoom: room,
+          booking: booking,
+          initialDate: initialDate,
+        ),
       ),
     );
     await refreshData();
@@ -1577,29 +1565,6 @@ class _RoomsScreenState extends State<RoomsScreen> {
   }
 }
 
-class BookingsScreen extends StatelessWidget {
-  const BookingsScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return AppScrollView(
-      children: [
-        const SectionTitle('Requests'),
-        if (bookings.isEmpty)
-          const EmptyPanel(
-            icon: Icons.event_note_outlined,
-            title: 'No booking requests',
-            subtitle: 'Tap Book to request your first room.',
-          )
-        else
-          ...bookings.map(
-            (booking) => BookingTile(booking: booking, detailed: true),
-          ),
-      ],
-    );
-  }
-}
-
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
 
@@ -1609,24 +1574,13 @@ class CalendarScreen extends StatefulWidget {
 
 class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime visibleMonth;
-  late DateTime selectedDate;
+  DateTime? selectedDate;
 
   @override
   void initState() {
     super.initState();
     final now = campusNow();
-    final activeBookings =
-        bookings
-            .where(
-              (booking) =>
-                  isActiveBooking(booking) && booking.endAt.isAfter(now),
-            )
-            .toList()
-          ..sort((a, b) => a.startAt.compareTo(b.startAt));
-    selectedDate = DateUtils.dateOnly(
-      activeBookings.isEmpty ? now : activeBookings.first.startAt,
-    );
-    visibleMonth = DateTime(selectedDate.year, selectedDate.month);
+    visibleMonth = DateTime(now.year, now.month);
   }
 
   @override
@@ -1635,8 +1589,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         bookings
             .where(
               (booking) =>
-                  isActiveBooking(booking) &&
-                  isSameDay(booking.startAt, selectedDate),
+                  selectedDate != null &&
+                  isSameDay(booking.startAt, selectedDate!),
             )
             .toList()
           ..sort((a, b) => a.startAt.compareTo(b.startAt));
@@ -1645,7 +1599,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       children: [
         const HeroPanel(
           title: 'Teaching Calendar',
-          subtitle: 'Approved and pending booking requests by date.',
+          subtitle: 'Select a date to view, create, or manage your bookings.',
         ),
         CardPanel(
           child: Column(
@@ -1705,15 +1659,34 @@ class _CalendarScreenState extends State<CalendarScreen> {
             ],
           ),
         ),
-        SectionTitle('Bookings on ${dateLabel(selectedDate)}'),
-        if (selectedBookings.isEmpty)
+        if (selectedDate == null)
           const EmptyPanel(
-            icon: Icons.event_busy_outlined,
-            title: 'No bookings',
-            subtitle: 'Choose another highlighted date or create a request.',
+            icon: Icons.touch_app_outlined,
+            title: 'Select a date',
+            subtitle:
+                'Your bookings and the Book a room button will appear here.',
           )
-        else
-          ...selectedBookings.map((booking) => BookingTile(booking: booking)),
+        else ...[
+          SectionTitle('Bookings on ${dateLabel(selectedDate!)}'),
+          if (!selectedDate!.isBefore(DateUtils.dateOnly(campusNow())))
+            FilledButton.icon(
+              onPressed: () => context
+                  .findAncestorStateOfType<_LecturerHomeState>()
+                  ?.openBookingForm(context, initialDate: selectedDate),
+              icon: const Icon(Icons.add),
+              label: const Text('Book a room'),
+            ),
+          if (selectedBookings.isEmpty)
+            const EmptyPanel(
+              icon: Icons.event_busy_outlined,
+              title: 'No bookings',
+              subtitle: 'There are no booking requests for this date.',
+            )
+          else
+            ...selectedBookings.map(
+              (booking) => BookingTile(booking: booking, detailed: true),
+            ),
+        ],
       ],
     );
   }
@@ -2013,10 +1986,16 @@ class RoomDetailsScreen extends StatelessWidget {
 }
 
 class BookingFormScreen extends StatefulWidget {
-  const BookingFormScreen({this.defaultRoom, this.booking, super.key});
+  const BookingFormScreen({
+    this.defaultRoom,
+    this.booking,
+    this.initialDate,
+    super.key,
+  });
 
   final Room? defaultRoom;
   final Booking? booking;
+  final DateTime? initialDate;
 
   @override
   State<BookingFormScreen> createState() => _BookingFormScreenState();
@@ -2026,7 +2005,8 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   late final List<Room> availableRooms;
   Room? selectedRoom;
   final moduleController = TextEditingController();
-  final purposeController = TextEditingController();
+  static const purposeOptions = ['Assignment', 'Lecture', 'Extra Curricular'];
+  String? selectedPurpose;
   final attendeesController = TextEditingController();
   late DateTime selectedDate;
   late TimeOfDay startTime;
@@ -2051,22 +2031,36 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       selectedRoom = availableRooms.first;
     }
 
-    final initialStart = widget.booking?.startAt ??
-        nextWholeHour(campusNow().add(const Duration(hours: 1)));
+    final earliestStart = nextWholeHour(
+      campusNow().add(const Duration(hours: 1)),
+    );
+    final requestedDate = widget.initialDate;
+    final initialStart =
+        widget.booking?.startAt ??
+        (requestedDate == null || isSameDay(requestedDate, earliestStart)
+            ? earliestStart
+            : DateTime(
+                requestedDate.year,
+                requestedDate.month,
+                requestedDate.day,
+                9,
+              ));
     final initialEnd =
         widget.booking?.endAt ?? initialStart.add(const Duration(hours: 1));
     selectedDate = DateUtils.dateOnly(initialStart);
     startTime = TimeOfDay.fromDateTime(initialStart);
     endTime = TimeOfDay.fromDateTime(initialEnd);
     moduleController.text = widget.booking?.moduleName ?? '';
-    purposeController.text = widget.booking?.purpose ?? '';
+    final existingPurpose = widget.booking?.purpose;
+    selectedPurpose = purposeOptions.contains(existingPurpose)
+        ? existingPurpose
+        : null;
     attendeesController.text = '${widget.booking?.attendees ?? 1}';
   }
 
   @override
   void dispose() {
     moduleController.dispose();
-    purposeController.dispose();
     attendeesController.dispose();
     super.dispose();
   }
@@ -2077,7 +2071,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     }
     final room = selectedRoom;
     final module = moduleController.text.trim();
-    final purpose = purposeController.text.trim();
+    final purpose = selectedPurpose ?? '';
     final attendees = int.tryParse(attendeesController.text.trim()) ?? 0;
     if (room == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2124,7 +2118,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     if (start.isBefore(campusNow().add(const Duration(hours: 1)))) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Bookings must be requested at least 1 hour before the start time.'),
+          content: Text(
+            'Bookings must be requested at least 1 hour before the start time.',
+          ),
         ),
       );
       return;
@@ -2249,20 +2245,29 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                     maxLength: 100,
                     decoration: const InputDecoration(labelText: 'Module name'),
                   ),
-                  TextField(
-                    controller: purposeController,
-                    enabled: !submitting,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLines: 3,
-                    maxLength: 500,
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedPurpose,
+                    isExpanded: true,
+                    hint: const Text('Select purpose'),
+                    items: purposeOptions
+                        .map(
+                          (purpose) => DropdownMenuItem(
+                            value: purpose,
+                            child: Text(purpose),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: submitting
+                        ? null
+                        : (value) => setState(() => selectedPurpose = value),
                     decoration: const InputDecoration(labelText: 'Purpose'),
                   ),
                   TextField(
                     controller: attendeesController,
                     enabled: !submitting,
                     keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  maxLength: 6,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    maxLength: 6,
                     decoration: InputDecoration(
                       labelText: 'Expected attendees',
                       helperText: 'Room capacity: ${room.capacity} seats',
@@ -2503,20 +2508,20 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
                               setState(() => severity = value ?? severity),
                     decoration: const InputDecoration(labelText: 'Severity'),
                   ),
-                TextField(
-                  controller: titleController,
+                  TextField(
+                    controller: titleController,
                     enabled: !submitting,
                     textCapitalization: TextCapitalization.sentences,
-                  textInputAction: TextInputAction.next,
-                  maxLength: 120,
+                    textInputAction: TextInputAction.next,
+                    maxLength: 120,
                     decoration: const InputDecoration(labelText: 'Issue title'),
                   ),
                   TextField(
                     controller: descriptionController,
                     enabled: !submitting,
-                  textCapitalization: TextCapitalization.sentences,
-                  maxLines: 4,
-                  maxLength: 2000,
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 4,
+                    maxLength: 2000,
                     decoration: const InputDecoration(labelText: 'Description'),
                   ),
                   SizedBox(
@@ -2700,7 +2705,7 @@ class CalendarMonthGrid extends StatelessWidget {
   });
 
   final DateTime month;
-  final DateTime selectedDate;
+  final DateTime? selectedDate;
   final ValueChanged<DateTime> onDateSelected;
 
   @override
@@ -2745,7 +2750,7 @@ class _CalendarDayCell extends StatelessWidget {
   final int dayNumber;
   final int daysInMonth;
   final DateTime month;
-  final DateTime selectedDate;
+  final DateTime? selectedDate;
   final ValueChanged<DateTime> onDateSelected;
 
   @override
@@ -2758,7 +2763,7 @@ class _CalendarDayCell extends StatelessWidget {
     final hasBooking = bookings.any(
       (booking) => isSameDay(booking.startAt, date),
     );
-    final isSelected = isSameDay(selectedDate, date);
+    final isSelected = selectedDate != null && isSameDay(selectedDate!, date);
     final isToday = isSameDay(campusNow(), date);
 
     return InkWell(
