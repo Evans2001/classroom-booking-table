@@ -615,7 +615,7 @@ declare global {
   var __roomBookingDatabase__: DatabaseSync | undefined;
 }
 
-function getDatabase(): DatabaseSync {
+export function getDatabase(): DatabaseSync {
   if (!globalThis.__roomBookingDatabase__) {
     if (DB_PATH !== ":memory:") {
       mkdirSync(DB_DIRECTORY, { recursive: true });
