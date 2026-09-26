@@ -11,5 +11,8 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     css: true,
+    env: {
+      ROOM_BOOKING_DB_PATH: ":memory:",
+    },
   },
 });

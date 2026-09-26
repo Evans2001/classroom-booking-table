@@ -19,6 +19,7 @@ export function RequestDecisionForm({ onSubmit }: RequestDecisionFormProps) {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
     if (needsNote && !note.trim()) {
       return;
     }
@@ -42,6 +43,7 @@ export function RequestDecisionForm({ onSubmit }: RequestDecisionFormProps) {
             { label: "Reject", value: "REJECTED" },
           ]}
           onChange={(event) => setDecision(event.target.value as "APPROVED" | "REJECTED")}
+          disabled={submitting}
         />
       </div>
       <div className="space-y-1">
@@ -51,6 +53,8 @@ export function RequestDecisionForm({ onSubmit }: RequestDecisionFormProps) {
           value={note}
           onChange={(event) => setNote(event.target.value)}
           required={needsNote}
+          disabled={submitting}
+          maxLength={500}
           placeholder={
             needsNote ? "Reason for rejection..." : "Optional note for requester..."
           }

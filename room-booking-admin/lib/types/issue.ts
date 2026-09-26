@@ -4,6 +4,7 @@ export type IssueStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
 export interface Issue {
   id: string;
   roomId: string;
+  roomName?: string;
   title: string;
   description: string;
   severity: IssueSeverity;

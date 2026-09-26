@@ -13,6 +13,11 @@ import {
 } from "@/lib/services/bookings.service";
 import type { BookingInput } from "@/lib/types/booking";
 import type { Room } from "@/lib/types/room";
+import {
+  getMaxCampusDateTimeInputValue,
+  toCampusDateTimeLocal,
+  validateCampusBookingWindow,
+} from "@/lib/utils/date-time";
 
 interface BookingRequestFormProps {
   rooms: Room[];
@@ -24,20 +29,6 @@ interface BookingRequestFormProps {
 }
 
 type AvailabilityState = "idle" | "checking" | "available" | "approval_required" | "unavailable";
-
-function toDateTimeLocal(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  const hours = `${date.getHours()}`.padStart(2, "0");
-  const minutes = `${date.getMinutes()}`.padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
 
 export function BookingRequestForm({
   rooms,
@@ -56,8 +47,8 @@ export function BookingRequestForm({
   const [form, setForm] = useState<BookingInput>({
     roomId: initialValues?.roomId ?? initialRoom?.id ?? "",
     moduleName: initialValues?.moduleName ?? "",
-    startAt: initialValues?.startAt ? toDateTimeLocal(initialValues.startAt) : "",
-    endAt: initialValues?.endAt ? toDateTimeLocal(initialValues.endAt) : "",
+    startAt: initialValues?.startAt ? toCampusDateTimeLocal(initialValues.startAt) : "",
+    endAt: initialValues?.endAt ? toCampusDateTimeLocal(initialValues.endAt) : "",
     purpose: initialValues?.purpose ?? "",
     attendees: initialValues?.attendees ?? 1,
   });
@@ -66,6 +57,7 @@ export function BookingRequestForm({
   const [availabilityMessage, setAvailabilityMessage] = useState("Choose date & time to verify.");
 
   const minStartAt = useMemo(() => getMinBookingDateTimeInputValue(), []);
+  const maxStartAt = useMemo(() => getMaxCampusDateTimeInputValue(), []);
 
   const filteredRooms = useMemo(
     () => rooms.filter((room) => room.building === building),
@@ -93,20 +85,33 @@ export function BookingRequestForm({
       return;
     }
 
+    const validationMessage = validateCampusBookingWindow(form.startAt, form.endAt);
+    if (validationMessage) {
+      setAvailabilityState("unavailable");
+      setAvailabilityMessage(validationMessage);
+      return;
+    }
+
     let active = true;
     setAvailabilityState("checking");
     setAvailabilityMessage("Checking room schedule...");
 
     const timer = setTimeout(async () => {
-      const result = await checkRoomAvailability({
-        roomId: form.roomId,
-        startAt: form.startAt,
-        endAt: form.endAt,
-        excludeBookingId: availabilityExcludeBookingId,
-      });
-      if (!active) return;
-      setAvailabilityState(result.requiresApproval ? "approval_required" : result.available ? "available" : "unavailable");
-      setAvailabilityMessage(result.message);
+      try {
+        const result = await checkRoomAvailability({
+          roomId: form.roomId,
+          startAt: form.startAt,
+          endAt: form.endAt,
+          excludeBookingId: availabilityExcludeBookingId,
+        });
+        if (!active) return;
+        setAvailabilityState(result.requiresApproval ? "approval_required" : result.available ? "available" : "unavailable");
+        setAvailabilityMessage(result.message);
+      } catch (error) {
+        if (!active) return;
+        setAvailabilityState("unavailable");
+        setAvailabilityMessage(error instanceof Error ? error.message : "Could not check availability. Try again.");
+      }
     }, 400);
 
     return () => {
@@ -120,9 +125,19 @@ export function BookingRequestForm({
     if (availabilityState !== "available" && availabilityState !== "approval_required") {
       return;
     }
+    const validationMessage = validateCampusBookingWindow(form.startAt, form.endAt);
+    if (validationMessage) {
+      setAvailabilityState("unavailable");
+      setAvailabilityMessage(validationMessage);
+      return;
+    }
     setSubmitting(true);
     try {
-      await onSubmit(form);
+      await onSubmit({
+        ...form,
+        moduleName: form.moduleName.trim(),
+        purpose: form.purpose.trim(),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -138,12 +153,16 @@ export function BookingRequestForm({
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
+            aria-label="Building"
+            name="building"
             value={building}
             onChange={(event) => setBuilding(event.target.value)}
             options={buildings.map((item) => ({ value: item, label: item }))}
             className="bg-slate-50"
           />
           <Select
+            aria-label="Room"
+            name="roomId"
             value={form.roomId}
             onChange={(event) => setForm((previous) => ({ ...previous, roomId: event.target.value }))}
             options={filteredRooms.map((room) => ({
@@ -162,22 +181,28 @@ export function BookingRequestForm({
         </div>
         <div className="grid grid-cols-1 gap-3">
           <div className="relative">
-            <label className="absolute left-3 top-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Start Time</label>
+            <label htmlFor="booking-start-at" className="absolute left-3 top-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Start Time</label>
             <Input
+              id="booking-start-at"
+              name="startAt"
               type="datetime-local"
               required
               min={minStartAt}
+              max={maxStartAt}
               value={form.startAt}
               onChange={(event) => setForm((previous) => ({ ...previous, startAt: event.target.value }))}
               className="pt-6 pb-2 h-14 bg-slate-50 text-sm font-bold"
             />
           </div>
           <div className="relative">
-            <label className="absolute left-3 top-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">End Time</label>
+            <label htmlFor="booking-end-at" className="absolute left-3 top-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">End Time</label>
             <Input
+              id="booking-end-at"
+              name="endAt"
               type="datetime-local"
               required
               min={form.startAt || minStartAt}
+              max={maxStartAt}
               value={form.endAt}
               onChange={(event) => setForm((previous) => ({ ...previous, endAt: event.target.value }))}
               className="pt-6 pb-2 h-14 bg-slate-50 text-sm font-bold"
@@ -188,6 +213,8 @@ export function BookingRequestForm({
 
       {/* Availability Status Box */}
       <div
+        role="status"
+        aria-live="polite"
         className={`flex items-start gap-3 rounded-xl border p-4 transition-colors ${
           availabilityState === "available"
             ? "border-emerald-200 bg-emerald-50 text-emerald-800 shadow-sm"
@@ -224,7 +251,10 @@ export function BookingRequestForm({
           <FileText className="h-4 w-4" /> Details
         </div>
         <Input
+          aria-label="Module name"
+          name="moduleName"
           required
+          maxLength={100}
           value={form.moduleName}
           onChange={(event) => setForm((previous) => ({ ...previous, moduleName: event.target.value }))}
           placeholder="Module name"
@@ -235,8 +265,12 @@ export function BookingRequestForm({
             <Users className="h-4 w-4 text-slate-400" />
           </div>
           <Input
+            aria-label="Number of attendees"
+            name="attendees"
             type="number"
             min={1}
+            max={selectedRoom?.capacity}
+            step={1}
             required
             value={form.attendees}
             onChange={(event) =>
@@ -256,7 +290,10 @@ export function BookingRequestForm({
           </p>
         ) : null}
         <Textarea
+          aria-label="Booking purpose"
+          name="purpose"
           required
+          maxLength={500}
           value={form.purpose}
           onChange={(event) => setForm((previous) => ({ ...previous, purpose: event.target.value }))}
           placeholder="What is the purpose of this booking?"
@@ -265,10 +302,11 @@ export function BookingRequestForm({
       </div>
 
       {/* Sticky Submit Button */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 p-4 pb-6 backdrop-blur-md border-t border-slate-100 sm:static sm:bg-transparent sm:p-0 sm:border-none sm:backdrop-blur-none sm:mt-6">
+      <div className="fixed bottom-16 left-0 right-0 z-40 bg-white/80 p-4 pb-6 backdrop-blur-md border-t border-slate-100 sm:static sm:bg-transparent sm:p-0 sm:border-none sm:backdrop-blur-none sm:mt-6">
         <div className="mx-auto max-w-md">
           <Button 
             type="submit" 
+            aria-busy={submitting}
             disabled={submitting || !["available", "approval_required"].includes(availabilityState)} 
             className="w-full h-14 rounded-xl shadow-lg shadow-brand-primary/20 text-base"
           >

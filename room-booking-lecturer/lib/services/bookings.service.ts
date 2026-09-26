@@ -1,14 +1,9 @@
 import type { AvailabilityResult, Booking, BookingInput } from "@/lib/types/booking";
 import { apiGet, apiSend } from "@/lib/services/api-client";
+import { getMinCampusDateTimeInputValue } from "@/lib/utils/date-time";
 
 export function getMinBookingDateTimeInputValue(): string {
-  const min = new Date();
-  min.setHours(0, 0, 0, 0);
-  min.setDate(min.getDate() + 7);
-  const year = min.getFullYear();
-  const month = `${min.getMonth() + 1}`.padStart(2, "0");
-  const day = `${min.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}T00:00`;
+  return getMinCampusDateTimeInputValue();
 }
 
 type AvailabilityInput = Pick<BookingInput, "roomId" | "startAt" | "endAt"> & {
@@ -31,15 +26,27 @@ export async function getBookingById(id: string): Promise<Booking | undefined> {
 }
 
 export async function checkRoomAvailability(input: AvailabilityInput): Promise<AvailabilityResult> {
-  return apiSend<AvailabilityResult>("/api/lecturer/bookings/availability", "POST", input);
+  return apiSend<AvailabilityResult>("/api/lecturer/bookings/availability", "POST", {
+    ...input,
+    startLocal: input.startAt,
+    endLocal: input.endAt,
+  });
 }
 
 export async function createBookingRequest(input: BookingInput): Promise<Booking> {
-  return apiSend<Booking>("/api/lecturer/bookings", "POST", input);
+  return apiSend<Booking>("/api/lecturer/bookings", "POST", {
+    ...input,
+    startLocal: input.startAt,
+    endLocal: input.endAt,
+  });
 }
 
 export async function updateBookingRequest(id: string, input: BookingInput): Promise<Booking> {
-  return apiSend<Booking>(`/api/lecturer/bookings/${id}`, "PUT", input);
+  return apiSend<Booking>(`/api/lecturer/bookings/${id}`, "PUT", {
+    ...input,
+    startLocal: input.startAt,
+    endLocal: input.endAt,
+  });
 }
 
 export async function deleteBookingRequest(id: string): Promise<void> {

@@ -49,10 +49,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
-      <div className="pointer-events-none fixed left-1/2 top-3 z-50 w-[92%] -translate-x-1/2 space-y-2 md:max-w-sm">
+      <div aria-label="Notifications" aria-live="polite" className="pointer-events-none fixed left-1/2 top-3 z-50 w-[92%] -translate-x-1/2 space-y-2 md:max-w-sm">
         {toasts.map((toast) => (
           <div
             key={toast.id}
+            role={toast.variant === "error" ? "alert" : "status"}
+            aria-atomic="true"
             className={`pointer-events-auto rounded-md border px-3 py-2 text-sm shadow ${variantClass[toast.variant]}`}
           >
             <p className="font-semibold">{toast.title}</p>

@@ -17,14 +17,22 @@ export default function RoomDetailsPage() {
   const params = useParams<{ id: string }>();
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await getRoomById(params.id);
-      setRoom(data ?? null);
-      setLoading(false);
+      try {
+        const data = await getRoomById(params.id);
+        if (active) setRoom(data ?? null);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load this room.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, [params.id]);
 
   if (loading) return (
@@ -38,8 +46,8 @@ export default function RoomDetailsPage() {
   if (!room) {
     return (
       <EmptyState
-        title="Room not found"
-        description="The selected room does not exist."
+        title={loadError ? "Could not load room" : "Room not found"}
+        description={loadError || "The selected room does not exist."}
         action={
           <Button asChild size="sm">
             <Link href="/lecturer/rooms">Back to Rooms</Link>

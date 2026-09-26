@@ -1,33 +1,30 @@
-# room_booking_lecturer
+# Lecturer mobile app
 
-This Flutter app now connects to the shared booking backend used by the admin web app.
+This Flutter app connects to the shared booking API hosted by the admin Next.js app.
 
-## Real phone setup
+## Local development
 
 1. Start the admin app backend on your computer.
-2. Make sure your phone and computer are on the same Wi‑Fi network.
-3. Find your computer's LAN IP address, for example `192.168.1.5`.
-4. Run or build the Flutter app with a backend URL that points to that IP.
-
-Example run command:
+2. For a real phone, connect the phone and computer to the same Wi-Fi network.
+3. Find the computer's LAN address, for example `192.168.1.5`.
+4. Pass that address when running the app:
 
 ```bash
 flutter run --dart-define=API_BASE_URL=http://192.168.1.5:3000
 ```
 
-Example APK build command:
+Development defaults are `http://10.0.2.2:3000` for an Android emulator and `http://localhost:3000` for desktop. The host firewall must permit the backend port.
+
+## Production release
+
+- Configure the deployed HTTPS API, for example `--dart-define=API_BASE_URL=https://booking.example.edu`. Release builds reject HTTP and do not have a localhost fallback.
+- Campus booking times default to Sri Lanka time (UTC+05:30). If needed, set `--dart-define=CAMPUS_UTC_OFFSET_MINUTES=330` to the campus offset.
+- Add `android/key.properties` with `storeFile`, `storePassword`, `keyAlias`, and `keyPassword`. The file and keystore are ignored by Git; release builds never use the debug signing key.
+- Cleartext HTTP is enabled only for debug and profile builds.
+- Before publishing, replace the placeholder Android application ID and download a matching `google-services.json` from Firebase.
+
+Example release build:
 
 ```bash
-flutter build apk --dart-define=API_BASE_URL=http://192.168.1.5:3000
+flutter build appbundle --release --dart-define=API_BASE_URL=https://booking.example.edu
 ```
-
-## Default behavior
-
-- Android emulator default: `http://10.0.2.2:3000`
-- Desktop default: `http://localhost:3000`
-- Real phone: use `--dart-define=API_BASE_URL=http://YOUR_COMPUTER_IP:3000`
-
-## Important
-
-- The admin Next.js app must be running, because it hosts the shared API and SQLite database.
-- Your firewall must allow incoming connections to port `3000` on your computer.

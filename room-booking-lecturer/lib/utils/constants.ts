@@ -3,8 +3,19 @@ import type { IssueSeverity, IssueStatus } from "@/lib/types/issue";
 import type { RoomStatus, RoomType } from "@/lib/types/room";
 
 export const AUTH_COOKIE_NAME = "rb_lecturer_session";
-export const AUTH_COOKIE_VALUE = "1";
 export const AUTH_MAX_AGE_SECONDS = 60 * 60 * 8;
+export const LECTURER_SESSION_STORAGE_KEYS = [
+  "lecturer_account_identifier",
+  "lecturer_account_name",
+  "lecturer_account_department",
+  "lecturer_account_position",
+  "lecturer_account_id_number",
+  "lecturer_session_token",
+] as const;
+
+export function isValidLecturerSessionToken(value: string | undefined): value is string {
+  return Boolean(value && /^[a-f0-9]{64}$/i.test(value));
+}
 
 export const DEMO_USER_EMAIL = "lecturer@eng.ruh.ac.lk";
 export const DEMO_USER_PASSWORD = "Lecturer@123";

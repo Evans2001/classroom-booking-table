@@ -24,19 +24,28 @@ export default function EditBookingPage() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const [bookingData, roomsData] = await Promise.all([
-        getBookingById(params.id),
-        listRooms(),
-      ]);
-      setBooking(bookingData ?? null);
-      setRooms(roomsData);
-      setLoading(false);
+      try {
+        const [bookingData, roomsData] = await Promise.all([
+          getBookingById(params.id),
+          listRooms(),
+        ]);
+        if (!active) return;
+        setBooking(bookingData ?? null);
+        setRooms(roomsData);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load this booking.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
 
     void loadData();
+    return () => { active = false; };
   }, [params.id]);
 
   const initialValues = useMemo<BookingInput | undefined>(() => {
@@ -65,7 +74,7 @@ export default function EditBookingPage() {
   };
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-40 sm:pb-24">
       <Link href="/lecturer/bookings" className="inline-flex items-center text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors">
         <ChevronLeft className="mr-1 h-4 w-4" /> Back to Bookings
       </Link>
@@ -87,6 +96,8 @@ export default function EditBookingPage() {
             <div className="h-12 rounded-xl bg-slate-100" />
             <div className="h-24 rounded-xl bg-slate-100" />
           </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{loadError}</div>
         ) : booking && initialValues && rooms.length ? (
           <BookingRequestForm
             rooms={rooms}

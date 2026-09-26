@@ -3,7 +3,6 @@ import type { RequestStatus } from "@/lib/types/request";
 import type { RoomStatus, RoomType } from "@/lib/types/room";
 
 export const AUTH_COOKIE_NAME = "rb_admin_session";
-export const AUTH_COOKIE_VALUE = "1";
 export const AUTH_MAX_AGE_SECONDS = 60 * 60 * 8;
 
 export const DEMO_ADMIN_EMAIL = "admin@roombooking.local";
@@ -15,6 +14,7 @@ export const SIDEBAR_ITEMS = [
   { href: "/admin/rooms", label: "Rooms" },
   { href: "/admin/requests", label: "Requests" },
   { href: "/admin/account-requests", label: "Account Requests" },
+  { href: "/admin/users", label: "Users" },
   { href: "/admin/issues", label: "Issues" },
   { href: "/admin/timetable-import", label: "Timetable Import" },
   { href: "/admin/calendar", label: "Semester Calendar" },
@@ -26,6 +26,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/admin/rooms": "Rooms",
   "/admin/requests": "Requests",
   "/admin/account-requests": "Account Requests",
+  "/admin/users": "Users",
   "/admin/issues": "Issues",
   "/admin/timetable-import": "Timetable Import",
   "/admin/calendar": "Semester Calendar",
