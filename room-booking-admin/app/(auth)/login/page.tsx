@@ -10,9 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/common/ToastProvider";
 import {
-  AUTH_COOKIE_NAME,
-  AUTH_COOKIE_VALUE,
-  AUTH_MAX_AGE_SECONDS,
   DEMO_ADMIN_EMAIL,
   DEMO_ADMIN_PASSWORD,
 } from "@/lib/utils/constants";
@@ -29,15 +26,21 @@ export default function LoginPage() {
     event.preventDefault();
     setSubmitting(true);
     try {
-      const valid = email.trim() === DEMO_ADMIN_EMAIL && password === DEMO_ADMIN_PASSWORD;
-      if (!valid) {
-        showToast("Invalid credentials", "Use the provided demo credentials.", "error");
+      const response = await fetch("/api/admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        showToast("Sign in failed", payload.error ?? "Unable to sign in.", "error");
         return;
       }
-      document.cookie = `${AUTH_COOKIE_NAME}=${AUTH_COOKIE_VALUE}; path=/; max-age=${AUTH_MAX_AGE_SECONDS}`;
       showToast("Login successful", "Redirecting to dashboard.", "success");
-      router.push("/admin/dashboard");
+      router.replace("/admin/dashboard");
       router.refresh();
+    } catch {
+      showToast("Sign in failed", "The server could not be reached. Please try again.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -113,7 +116,8 @@ export default function LoginPage() {
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder={DEMO_ADMIN_EMAIL}
+                    placeholder={process.env.NODE_ENV !== "production" ? DEMO_ADMIN_EMAIL : "admin@example.edu"}
+                    autoComplete="username"
                     className="h-12 border-[#dfccc6] bg-[#fffaf7] pl-11 text-[#2a1716] placeholder:text-[#9a817d] focus-visible:border-[#F3C033]"
                     required
                   />
@@ -135,6 +139,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="Enter password"
+                    autoComplete="current-password"
                     className="h-12 border-[#dfccc6] bg-[#fffaf7] px-11 text-[#2a1716] placeholder:text-[#9a817d] focus-visible:border-[#F3C033]"
                     required
                   />
@@ -163,14 +168,17 @@ export default function LoginPage() {
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Button>
 
-              <div className="rounded-xl border border-[#eadbd6] bg-[#fbf4ef] p-4 text-xs leading-6 text-[#694644]">
-                <p>
-                  <span className="font-semibold">Email:</span> {DEMO_ADMIN_EMAIL}
-                </p>
-                <p>
-                  <span className="font-semibold">Password:</span> {DEMO_ADMIN_PASSWORD}
-                </p>
-              </div>
+              {process.env.NODE_ENV !== "production" ? (
+                <div className="rounded-xl border border-[#eadbd6] bg-[#fbf4ef] p-4 text-xs leading-6 text-[#694644]">
+                  <p className="font-semibold">Local demo credentials</p>
+                  <p>
+                    <span className="font-semibold">Email:</span> {DEMO_ADMIN_EMAIL}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Password:</span> {DEMO_ADMIN_PASSWORD}
+                  </p>
+                </div>
+              ) : null}
             </form>
           </div>
         </section>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 
 import { EmptyState } from "@/components/common/EmptyState";
@@ -12,19 +12,33 @@ export default function RoomsPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [filter, setFilter] = useState<"ALL" | "AVAILABLE" | "LARGE">("ALL");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await listRooms();
-      setRooms(data);
-      setLoading(false);
+      try {
+        const data = await listRooms();
+        if (active) setRooms(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load rooms.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, []);
 
-  const filtered = rooms.filter((room) =>
-    `${room.name} ${room.code} ${room.building}`.toLowerCase().includes(query.toLowerCase()),
-  );
+  const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return rooms.filter((room) => {
+      if (filter === "AVAILABLE" && room.status !== "AVAILABLE") return false;
+      if (filter === "LARGE" && room.capacity < 100) return false;
+      return `${room.name} ${room.code} ${room.building}`.toLowerCase().includes(normalizedQuery);
+    });
+  }, [filter, query, rooms]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -43,6 +57,7 @@ export default function RoomsPage() {
             </div>
             <input
               type="text"
+              aria-label="Search rooms"
               placeholder="Search by name, code, or building..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -52,24 +67,39 @@ export default function RoomsPage() {
         </div>
       </div>
 
-      {/* Quick Filters Placeholder (Visual only for aesthetics, or can implement logic later) */}
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-2 px-2">
-        <button className="flex-none rounded-full bg-slate-900 px-4 py-1.5 text-xs font-semibold text-white shadow-sm">
-          All Rooms
-        </button>
-        <button className="flex-none rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:border-slate-300">
-          Available Now
-        </button>
-        <button className="flex-none rounded-full border border-slate-200 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:border-slate-300">
-          Large Capacity
-        </button>
+        {([
+          ["ALL", "All rooms"],
+          ["AVAILABLE", "Available"],
+          ["LARGE", "100+ seats"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={filter === value}
+            onClick={() => setFilter(value)}
+            className={`flex-none rounded-full px-4 py-1.5 text-xs font-semibold shadow-sm transition-colors ${
+              filter === value
+                ? "bg-slate-900 text-white"
+                : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* List Section */}
       <div className="space-y-4">
         <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500">
-          {filtered.length} {filtered.length === 1 ? 'Room' : 'Rooms'} Found
+          {loading ? "Loading rooms" : `${filtered.length} ${filtered.length === 1 ? "Room" : "Rooms"} Found`}
         </h3>
+
+        {loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+            {loadError}
+          </div>
+        ) : null}
         
         {loading ? (
           <div className="animate-pulse space-y-4">
@@ -79,7 +109,7 @@ export default function RoomsPage() {
           </div>
         ) : null}
 
-        {!loading && !filtered.length ? (
+        {!loading && !loadError && !filtered.length ? (
           <EmptyState title="No rooms found" description="Try a different search term." />
         ) : null}
 

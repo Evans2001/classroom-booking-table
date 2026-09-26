@@ -29,6 +29,7 @@ export default function AccountRequestsPage() {
   const [requests, setRequests] = useState<LecturerAccountRequest[]>([]);
   const [status, setStatus] = useState<LecturerAccountRequestStatus | "ALL">("PENDING");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const { showToast } = useToast();
@@ -37,10 +38,15 @@ export default function AccountRequestsPage() {
     let active = true;
     async function loadData() {
       setLoading(true);
-      const data = await listAccountRequests(status);
-      if (!active) return;
-      setRequests(data);
-      setLoading(false);
+      setLoadError("");
+      try {
+        const data = await listAccountRequests(status);
+        if (active) setRequests(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load account requests.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
     return () => {
@@ -53,6 +59,7 @@ export default function AccountRequestsPage() {
   }, [status]);
 
   const submitDecision = useCallback(async (request: LecturerAccountRequest, decision: "APPROVED" | "REJECTED") => {
+    if (busyId) return;
     setBusyId(request.id);
     try {
       const updated = await decideAccountRequest(request.id, decision, notes[request.id]);
@@ -70,7 +77,7 @@ export default function AccountRequestsPage() {
     } finally {
       setBusyId(null);
     }
-  }, [notes, reload, showToast]);
+  }, [busyId, notes, reload, showToast]);
 
   const columns = useMemo<DataColumn<LecturerAccountRequest>[]>(
     () => [
@@ -121,12 +128,14 @@ export default function AccountRequestsPage() {
                 }
                 placeholder="Optional approval note, required for rejection"
                 className="min-h-20 text-sm"
+                maxLength={500}
+                disabled={busyId !== null}
               />
               <div className="flex gap-2">
                 <Button
                   type="button"
                   size="sm"
-                  disabled={busyId === request.id}
+                  disabled={busyId !== null}
                   onClick={() => submitDecision(request, "APPROVED")}
                 >
                   Approve
@@ -135,7 +144,7 @@ export default function AccountRequestsPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={busyId === request.id}
+                  disabled={busyId !== null}
                   onClick={() => submitDecision(request, "REJECTED")}
                 >
                   Reject
@@ -167,6 +176,8 @@ export default function AccountRequestsPage() {
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading account requests...</p>
+      ) : loadError ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{loadError}</div>
       ) : requests.length ? (
         <DataTable columns={columns} data={requests} rowKey={(request) => request.id} />
       ) : (

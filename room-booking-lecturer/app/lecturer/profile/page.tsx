@@ -19,12 +19,13 @@ export default function ProfilePage() {
   const [idNumber, setIdNumber] = useState("Verified during admin approval");
   const [currentPassword, setCurrentPassword] = useState("");
   const [nextPassword, setNextPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
   const mustChangePassword = searchParams.get("changePassword") === "1";
 
   useEffect(() => {
-    setIdentifier(sessionStorage.getItem("lecturer_account_identifier") ?? "lecturer@eng.ruh.ac.lk");
+    setIdentifier(sessionStorage.getItem("lecturer_account_identifier") ?? "Unavailable");
     setName(sessionStorage.getItem("lecturer_account_name") ?? "Lecturer");
     setDepartment(sessionStorage.getItem("lecturer_account_department") ?? "Faculty Department");
     setPosition(sessionStorage.getItem("lecturer_account_position") ?? "Lecturer");
@@ -33,9 +34,14 @@ export default function ProfilePage() {
 
   const submitPassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
+    if (nextPassword !== confirmPassword) {
+      showToast("Passwords do not match", "Re-enter the same new password in both fields.", "error");
+      return;
+    }
     setSubmitting(true);
     try {
-      const account = await changeLecturerPassword(identifier, currentPassword, nextPassword);
+      const account = await changeLecturerPassword(currentPassword, nextPassword);
       sessionStorage.setItem("lecturer_account_name", account.name);
       sessionStorage.setItem("lecturer_account_department", account.department);
       sessionStorage.setItem("lecturer_account_position", account.position);
@@ -47,6 +53,7 @@ export default function ProfilePage() {
       showToast("Password changed", "You can use your new password next time you sign in.", "success");
       setCurrentPassword("");
       setNextPassword("");
+      setConfirmPassword("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to change password.";
       showToast("Password change failed", message, "error");
@@ -106,6 +113,8 @@ export default function ProfilePage() {
                 type="password"
                 value={currentPassword}
                 onChange={(event) => setCurrentPassword(event.target.value)}
+                autoComplete="current-password"
+                maxLength={128}
                 required
               />
             </label>
@@ -115,7 +124,21 @@ export default function ProfilePage() {
                 type="password"
                 value={nextPassword}
                 onChange={(event) => setNextPassword(event.target.value)}
+                autoComplete="new-password"
                 minLength={8}
+                maxLength={128}
+                required
+              />
+            </label>
+            <label className="block space-y-2">
+              <span className="text-sm font-bold text-slate-700">Confirm new password</span>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={8}
+                maxLength={128}
                 required
               />
             </label>

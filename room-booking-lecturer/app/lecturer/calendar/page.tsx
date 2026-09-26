@@ -12,6 +12,11 @@ import { listMySemesterLectures } from "@/lib/services/timetable.service";
 import type { Booking } from "@/lib/types/booking";
 import type { Room } from "@/lib/types/room";
 import type { LecturerTimetableEntry } from "@/lib/types/timetable";
+import {
+  campusDateKey,
+  validateCampusBookingWindow,
+} from "@/lib/utils/date-time";
+import { formatTime } from "@/lib/utils/format";
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -30,14 +35,16 @@ function isSameDay(a: Date, b: Date): boolean {
 }
 
 function getDateKey(date: Date): string {
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function formatTimeRange(booking: Booking): string {
-  const start = new Date(booking.startAt);
-  const end = new Date(booking.endAt);
+  return `${formatTime(booking.startAt)} - ${formatTime(booking.endAt)}`;
+}
 
-  return `${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} - ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+function campusToday(): Date {
+  const [year, month, day] = campusDateKey(new Date()).split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function toLocalDateTime(date: Date, time: string): string {
@@ -50,32 +57,47 @@ function toLocalDateTime(date: Date, time: string): string {
 export default function CalendarPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [semesterLectures, setSemesterLectures] = useState<LecturerTimetableEntry[]>([]);
-  const [availabilityResult, setAvailabilityResult] = useState<{ key: string; rooms: Room[] } | null>(null);
+  const [availabilityResult, setAvailabilityResult] = useState<{ key: string; rooms: Room[]; error?: string } | null>(null);
   const [startTime, setStartTime] = useState("08:00");
   const [endTime, setEndTime] = useState("09:00");
   const [loading, setLoading] = useState(true);
-  const [visibleMonth, setVisibleMonth] = useState(() => startOfDay(new Date()));
-  const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()));
+  const [loadError, setLoadError] = useState("");
+  const [mounted, setMounted] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(campusToday);
+  const [selectedDate, setSelectedDate] = useState(campusToday);
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
+    let active = true;
     async function loadBookings() {
-      const [data, lectures] = await Promise.all([listMyBookings(), listMySemesterLectures()]);
-      setBookings(data);
-      setSemesterLectures(lectures);
-      setLoading(false);
+      try {
+        const [data, lectures] = await Promise.all([listMyBookings(), listMySemesterLectures()]);
+        if (!active) return;
+        setBookings(data);
+        setSemesterLectures(lectures);
+      } catch (error) {
+        if (!active) return;
+        setLoadError(error instanceof Error ? error.message : "Could not load your calendar.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
 
     void loadBookings();
+    return () => { active = false; };
   }, []);
 
   const startAt = toLocalDateTime(selectedDate, startTime);
   const endAt = toLocalDateTime(selectedDate, endTime);
   const minimumBookingDate = useMemo(() => {
-    const date = startOfDay(new Date());
-    date.setDate(date.getDate() + 7);
-    return date;
+    return campusToday();
   }, []);
-  const canCheckAvailability = selectedDate >= minimumBookingDate && endTime > startTime;
+  const bookingWindowError =
+    selectedDate < minimumBookingDate
+      ? "Select today or a future date to see rooms available for booking."
+      : validateCampusBookingWindow(startAt, endAt);
+  const canCheckAvailability = mounted && !bookingWindowError;
   const availabilityKey = `${startAt}|${endAt}`;
   const availableRooms = availabilityResult?.key === availabilityKey ? availabilityResult.rooms : [];
   const availabilityLoading = canCheckAvailability && availabilityResult?.key !== availabilityKey;
@@ -85,7 +107,15 @@ export default function CalendarPage() {
     let active = true;
     void listAvailableRooms(startAt, endAt)
       .then((rooms) => { if (active) setAvailabilityResult({ key: availabilityKey, rooms }); })
-      .catch(() => { if (active) setAvailabilityResult({ key: availabilityKey, rooms: [] }); });
+      .catch((error) => {
+        if (active) {
+          setAvailabilityResult({
+            key: availabilityKey,
+            rooms: [],
+            error: error instanceof Error ? error.message : "Could not check room availability.",
+          });
+        }
+      });
     return () => { active = false; };
   }, [availabilityKey, canCheckAvailability, endAt, startAt]);
 
@@ -108,14 +138,14 @@ export default function CalendarPage() {
 
   const bookingsByDate = useMemo(() => {
     return activeBookings.reduce<Record<string, Booking[]>>((groups, booking) => {
-      const key = getDateKey(new Date(booking.startAt));
+      const key = campusDateKey(booking.startAt);
       groups[key] = [...(groups[key] || []), booking];
       return groups;
     }, {});
   }, [activeBookings]);
 
   const selectedBookings = useMemo(() => {
-    return (bookingsByDate[getDateKey(selectedDate)] || []).sort(
+    return [...(bookingsByDate[getDateKey(selectedDate)] || [])].sort(
       (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
     );
   }, [bookingsByDate, selectedDate]);
@@ -123,13 +153,16 @@ export default function CalendarPage() {
     .filter((lecture) => lecture.dayOfWeek === selectedDate.toLocaleDateString("en-US", { weekday: "long" }))
     .sort((a, b) => a.startTime.localeCompare(b.startTime)), [semesterLectures, selectedDate]);
 
-  const today = startOfDay(new Date());
+  const today = campusToday();
   const monthLabel = visibleMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const selectedLabel = selectedDate.toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
+  const selectedBookingHref = canCheckAvailability
+    ? `/lecturer/bookings/new?${new URLSearchParams({ startAt, endAt })}`
+    : "/lecturer/bookings/new";
 
   const moveMonth = (direction: number) => {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + direction, 1));
@@ -148,6 +181,12 @@ export default function CalendarPage() {
           </div>
         </div>
       </div>
+
+      {loadError ? (
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+          {loadError}
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -196,6 +235,8 @@ export default function CalendarPage() {
                 key={day.toISOString()}
                 type="button"
                 onClick={() => setSelectedDate(startOfDay(day))}
+                aria-label={day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                aria-pressed={isSelected}
                 className={`relative flex aspect-square min-h-11 flex-col items-center justify-center rounded-xl border text-sm font-black transition-all ${
                   isSelected
                     ? "border-brand-primary bg-brand-primary text-white shadow-lg shadow-brand-primary/20"
@@ -240,7 +281,7 @@ export default function CalendarPage() {
             </p>
           </div>
           <Button asChild size="sm" className="rounded-xl">
-            <Link href="/lecturer/bookings/new">
+            <Link href={selectedBookingHref}>
               <Plus className="mr-1 h-4 w-4" />
               Book
             </Link>
@@ -306,12 +347,14 @@ export default function CalendarPage() {
             <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900" />
           </label>
         </div>
-        {selectedDate < minimumBookingDate ? (
-          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">Select a date at least seven days ahead to see rooms available for booking.</div>
-        ) : endTime <= startTime ? (
-          <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm font-semibold text-rose-700">End time must be later than start time.</div>
+        {!mounted ? (
+          <div className="h-24 animate-pulse rounded-2xl bg-slate-200" />
+        ) : bookingWindowError ? (
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">{bookingWindowError}</div>
         ) : availabilityLoading ? (
           <div className="h-24 animate-pulse rounded-2xl bg-slate-200" />
+        ) : availabilityResult?.key === availabilityKey && availabilityResult.error ? (
+          <div role="alert" className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{availabilityResult.error}</div>
         ) : availableRooms.length ? (
           <div className="space-y-2">{availableRooms.map((room) => (
             <article key={room.id} className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">

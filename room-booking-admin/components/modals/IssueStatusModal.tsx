@@ -9,7 +9,7 @@ interface IssueStatusModalProps {
   onClose: () => void;
   issueTitle: string;
   status: IssueStatus;
-  onSubmit: (status: IssueStatus, note?: string) => Promise<void>;
+  onSubmit: (status: IssueStatus, note?: string) => Promise<boolean>;
 }
 
 export function IssueStatusModal({
@@ -20,8 +20,7 @@ export function IssueStatusModal({
   onSubmit,
 }: IssueStatusModalProps) {
   const handleSubmit = async (nextStatus: IssueStatus, note?: string) => {
-    await onSubmit(nextStatus, note);
-    onClose();
+    if (await onSubmit(nextStatus, note)) onClose();
   };
 
   return (

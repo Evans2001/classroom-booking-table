@@ -1,19 +1,28 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { __resetRoomsService, createRoom, listRooms, updateRoom } from "@/lib/services/rooms.service";
+import { createRoom, listRooms, updateRoom } from "@/lib/services/rooms.service";
+import { roomsMock } from "@/lib/data/rooms.mock";
+import { jsonResponse } from "@/tests/helpers/http";
 
 describe("rooms.service", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+
   beforeEach(() => {
-    __resetRoomsService();
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
   });
 
+  afterEach(() => vi.unstubAllGlobals());
+
   it("lists seed rooms", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(roomsMock));
     const rooms = await listRooms();
-    expect(rooms.length).toBeGreaterThan(0);
+    expect(rooms).toEqual(roomsMock);
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/rooms", { cache: "no-store" });
   });
 
   it("creates a new room", async () => {
-    const created = await createRoom({
+    const input = {
       code: "MR-999",
       name: "Test Room",
       building: "Block C",
@@ -23,16 +32,26 @@ describe("rooms.service", () => {
       hasProjector: false,
       hasAc: true,
       status: "ACTIVE",
-    });
+    } as const;
+    const createdRoom = { ...roomsMock[0], ...input, id: "room-created" };
+    fetchMock.mockResolvedValueOnce(jsonResponse(createdRoom, 201));
 
-    const rooms = await listRooms();
-    expect(rooms.some((room) => room.id === created.id)).toBe(true);
+    await expect(createRoom(input)).resolves.toEqual(createdRoom);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/rooms",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(input) }),
+    );
   });
 
   it("updates a room", async () => {
-    const rooms = await listRooms();
-    const target = rooms[0];
+    const target = roomsMock[0];
+    const result = { ...target, status: "MAINTENANCE" as const };
+    fetchMock.mockResolvedValueOnce(jsonResponse(result));
     const updated = await updateRoom(target.id, { status: "MAINTENANCE" });
-    expect(updated.status).toBe("MAINTENANCE");
+    expect(updated).toEqual(result);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/admin/rooms/${target.id}`,
+      expect.objectContaining({ method: "PATCH" }),
+    );
   });
 });

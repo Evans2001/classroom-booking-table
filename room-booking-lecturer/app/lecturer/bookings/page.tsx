@@ -21,18 +21,26 @@ const STATUS_FILTERS: Array<{ key: BookingStatus | "ALL"; label: string }> = [
 export default function BookingsPage() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [statusFilter, setStatusFilter] = useState<BookingStatus | "ALL">("ALL");
   const [historyDays, setHistoryDays] = useState(7);
   const [visibleCount, setVisibleCount] = useState(5);
   const { showToast } = useToast();
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await listMyBookings();
-      setBookings(data);
-      setLoading(false);
+      try {
+        const data = await listMyBookings();
+        if (active) setBookings(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load bookings.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, []);
 
   const filtered = useMemo(() => {
@@ -60,11 +68,15 @@ export default function BookingsPage() {
   const handleDelete = async (booking: Booking) => {
     try {
       await deleteBookingRequest(booking.id);
-      setBookings((current) => current.filter((item) => item.id !== booking.id));
-      showToast("Booking removed", "The booking was removed from your list.", "success");
+      setBookings((current) => current.map((item) =>
+        item.id === booking.id
+          ? { ...item, status: "CANCELLED", reviewerNote: "Cancelled by lecturer." }
+          : item,
+      ));
+      showToast("Booking cancelled", "The cancellation is retained in your booking history.", "success");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to remove booking.";
-      showToast("Remove failed", message, "error");
+      const message = error instanceof Error ? error.message : "Unable to cancel booking.";
+      showToast("Cancellation failed", message, "error");
     }
   };
 
@@ -98,6 +110,7 @@ export default function BookingsPage() {
                     : "text-slate-500 hover:text-slate-700"
                 }`}
                 onClick={() => setStatusFilter(item.key)}
+                aria-pressed={statusFilter === item.key}
               >
                 {item.label}
               </button>
@@ -115,6 +128,11 @@ export default function BookingsPage() {
 
       {/* Main List Area */}
       <div className="space-y-4">
+        {loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+            {loadError}
+          </div>
+        ) : null}
         {loading ? (
           <div className="animate-pulse space-y-4">
             {[1, 2, 3].map((i) => (
@@ -123,7 +141,7 @@ export default function BookingsPage() {
           </div>
         ) : null}
 
-        {!loading && !bookings.length ? (
+        {!loading && !loadError && !bookings.length ? (
           <div className="pt-8">
             <EmptyState
               title="No bookings yet"
@@ -135,7 +153,7 @@ export default function BookingsPage() {
               }
             />
           </div>
-        ) : !loading && !visible.length ? (
+        ) : !loading && !loadError && !visible.length ? (
           <div className="pt-8">
             <EmptyState
               title="No bookings in this period"
@@ -175,6 +193,7 @@ export default function BookingsPage() {
       <div className="fixed bottom-[88px] right-4 z-40 pb-safe">
         <Link 
           href="/lecturer/bookings/new"
+          aria-label="Create a booking"
           className="flex h-14 w-14 items-center justify-center rounded-full bg-brand-primary text-white shadow-lg shadow-brand-primary/40 transition-transform hover:scale-105 active:scale-95"
         >
           <Plus className="h-6 w-6" />

@@ -10,12 +10,10 @@ export async function loginLecturer(identifier: string, password: string): Promi
 }
 
 export async function changeLecturerPassword(
-  identifier: string,
   currentPassword: string,
   nextPassword: string,
 ): Promise<LecturerAccount> {
   return apiSend<LecturerAccount>("/api/lecturer/auth/change-password", "POST", {
-    identifier,
     currentPassword,
     nextPassword,
   });

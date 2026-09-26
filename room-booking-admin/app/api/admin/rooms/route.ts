@@ -1,12 +1,15 @@
 import type { RoomFilters } from "@/lib/types/room";
 import { createAdminRoom, listAdminRooms } from "@/lib/server/database";
-import { errorResponse, json, optionsResponse } from "@/lib/server/api";
+import { errorResponse, json, optionsResponse, requireAdminApiAuth } from "@/lib/server/api";
 
 export function OPTIONS() {
   return optionsResponse();
 }
 
 export async function GET(request: Request) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;
   const status = searchParams.get("status") ?? undefined;
@@ -21,6 +24,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const authError = requireAdminApiAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     return json(createAdminRoom(body), { status: 201 });

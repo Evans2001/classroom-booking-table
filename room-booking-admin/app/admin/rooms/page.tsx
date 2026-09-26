@@ -18,6 +18,7 @@ import { ROOM_STATUS_LABELS, ROOM_TYPE_LABELS } from "@/lib/utils/constants";
 export default function RoomsPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<RoomStatus | "ALL">("ALL");
   const [type, setType] = useState<RoomType | "ALL">("ALL");
@@ -27,24 +28,47 @@ export default function RoomsPage() {
   const { showToast } = useToast();
 
   useEffect(() => {
+    let active = true;
     async function loadRooms() {
       setLoading(true);
-      const data = await listRooms({ search, status, type });
-      setRooms(data);
-      setLoading(false);
+      setLoadError("");
+      try {
+        const data = await listRooms({ search, status, type });
+        if (active) setRooms(data);
+      } catch (error) {
+        if (active) {
+          setLoadError(error instanceof Error ? error.message : "Unable to load rooms.");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
     }
-    void loadRooms();
+    const timer = window.setTimeout(() => void loadRooms(), 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
   }, [search, status, type]);
 
   const handleDelete = async () => {
-    if (!roomToDelete) return;
+    if (!roomToDelete || isDeleting) return;
     try {
       setIsDeleting(true);
       await deleteRoom(roomToDelete.id);
-      setRooms((prev) => prev.filter((r) => r.id !== roomToDelete.id));
-      showToast("Room deleted successfully.", undefined, "success");
-    } catch {
-      showToast("Failed to delete room.", undefined, "error");
+      setRooms((previous) =>
+        status !== "ALL" && status !== "INACTIVE"
+          ? previous.filter((room) => room.id !== roomToDelete.id)
+          : previous.map((room) =>
+              room.id === roomToDelete.id ? { ...room, status: "INACTIVE" } : room,
+            ),
+      );
+      showToast("Room archived successfully.", "Existing booking and issue history was preserved.", "success");
+    } catch (error) {
+      showToast(
+        "Failed to archive room.",
+        error instanceof Error ? error.message : undefined,
+        "error",
+      );
     } finally {
       setIsDeleting(false);
       setRoomToDelete(null);
@@ -62,12 +86,13 @@ export default function RoomsPage() {
             <Link href={`/admin/rooms/${room.id}`} className="text-sm font-medium text-blue-700 hover:underline">
               View
             </Link>
-            <button
+            {room.status !== "INACTIVE" ? <button
+              type="button"
               onClick={() => setRoomToDelete(room)}
               className="px-3 py-1.5 text-sm font-medium text-red-600 transition-colors rounded-lg hover:bg-red-50 hover:text-red-700"
             >
-              Delete
-            </button>
+              Archive
+            </button> : null}
           </div>
         ),
       },
@@ -112,6 +137,10 @@ export default function RoomsPage() {
 
       {loading ? (
         <p className="text-sm text-slate-500">Loading rooms...</p>
+      ) : loadError ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">
+          {loadError}
+        </div>
       ) : rooms.length ? (
         <DataTable columns={columns} data={rooms} rowKey={(room) => room.id} />
       ) : (
@@ -128,9 +157,10 @@ export default function RoomsPage() {
 
       <ConfirmDialog
         open={!!roomToDelete}
-        title="Delete Room"
-        description="Are you sure you want to delete this room? This action cannot be undone."
-        confirmLabel={isDeleting ? "Deleting..." : "Delete"}
+        title="Archive room"
+        description="Archive this room? It will no longer be bookable, while existing booking and issue history is preserved."
+        confirmLabel={isDeleting ? "Archiving..." : "Archive"}
+        busy={isDeleting}
         onConfirm={handleDelete}
         onCancel={() => setRoomToDelete(null)}
       />

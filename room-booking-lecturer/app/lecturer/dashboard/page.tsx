@@ -11,6 +11,7 @@ import { listMyBookings } from "@/lib/services/bookings.service";
 import { listMyIssues } from "@/lib/services/issues.service";
 import { listRooms } from "@/lib/services/rooms.service";
 import type { Booking } from "@/lib/types/booking";
+import { formatDayNumber, formatMonthShort, formatTime } from "@/lib/utils/format";
 
 export default function LecturerDashboardPage() {
   const [roomsCount, setRoomsCount] = useState(0);
@@ -19,6 +20,7 @@ export default function LecturerDashboardPage() {
   const [recentBookings, setRecentBookings] = useState<Booking[]>([]);
   const [lecturerName, setLecturerName] = useState("Lecturer");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     setLecturerName(sessionStorage.getItem("lecturer_account_name") ?? "Lecturer");
@@ -34,9 +36,16 @@ export default function LecturerDashboardPage() {
         setBookingsCount(bookings.length);
         setIssuesCount(issues.length);
         
-        // Get the 3 most recent active/pending bookings
-        const activeBookings = bookings.filter(b => b.status === "PENDING" || b.status === "APPROVED");
-        setRecentBookings(activeBookings.slice(0, 3));
+        const now = Date.now();
+        const upcomingBookings = bookings
+          .filter((booking) =>
+            (booking.status === "PENDING" || booking.status === "APPROVED") &&
+            new Date(booking.endAt).getTime() > now,
+          )
+          .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+        setRecentBookings(upcomingBookings.slice(0, 3));
+      } catch (error) {
+        setLoadError(error instanceof Error ? error.message : "Could not load dashboard data.");
       } finally {
         setLoading(false);
       }
@@ -73,6 +82,12 @@ export default function LecturerDashboardPage() {
           </div>
         </div>
       </div>
+
+      {loadError ? (
+        <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+          {loadError}
+        </div>
+      ) : null}
 
       {/* Stats Grid */}
       <div>
@@ -125,15 +140,15 @@ export default function LecturerDashboardPage() {
               <Card key={booking.id} className="overflow-hidden p-0">
                 <div className="flex items-center gap-4 p-4">
                   <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-brand-primary/5 text-brand-primary">
-                    <span className="text-[10px] font-bold uppercase">{new Date(booking.startAt).toLocaleString('en-US', { month: 'short' })}</span>
-                    <span className="text-lg font-black leading-none">{new Date(booking.startAt).getDate()}</span>
+                    <span className="text-[10px] font-bold uppercase">{formatMonthShort(booking.startAt)}</span>
+                    <span className="text-lg font-black leading-none">{formatDayNumber(booking.startAt)}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <h4 className="truncate font-bold text-slate-900">{booking.roomName}</h4>
                     <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
                       <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                       <span className="truncate">
-                        {new Date(booking.startAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(booking.endAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {formatTime(booking.startAt)} - {formatTime(booking.endAt)}
                       </span>
                     </div>
                   </div>

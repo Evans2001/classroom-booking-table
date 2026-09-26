@@ -10,20 +10,28 @@ import { StatusBadge } from "@/components/common/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { getIssueById } from "@/lib/services/issues.service";
 import type { Issue } from "@/lib/types/issue";
-import { formatDateTime } from "@/lib/utils/format";
+import { formatDateTime, isSafeHttpUrl } from "@/lib/utils/format";
 
 export default function IssueDetailPage() {
   const params = useParams<{ id: string }>();
   const [issue, setIssue] = useState<Issue | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await getIssueById(params.id);
-      setIssue(data ?? null);
-      setLoading(false);
+      try {
+        const data = await getIssueById(params.id);
+        if (active) setIssue(data ?? null);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load this issue.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, [params.id]);
 
   if (loading) return (
@@ -36,8 +44,8 @@ export default function IssueDetailPage() {
   if (!issue) {
     return (
       <EmptyState
-        title="Issue not found"
-        description="This issue ID is unavailable."
+        title={loadError ? "Could not load issue" : "Issue not found"}
+        description={loadError || "This issue ID is unavailable."}
         action={
           <Button asChild size="sm">
             <Link href="/lecturer/issues">Back to Issues</Link>
@@ -48,6 +56,7 @@ export default function IssueDetailPage() {
   }
 
   const isResolved = issue.status === "RESOLVED" || issue.status === "CLOSED";
+  const attachmentUrl = issue.imageUrl && isSafeHttpUrl(issue.imageUrl) ? issue.imageUrl : undefined;
 
   return (
     <div className="space-y-6 pb-24">
@@ -92,10 +101,10 @@ export default function IssueDetailPage() {
             </p>
           </div>
 
-          {issue.imageUrl && (
+          {attachmentUrl && (
             <div className="pt-2">
               <a 
-                href={issue.imageUrl} 
+                href={attachmentUrl}
                 target="_blank" 
                 rel="noreferrer" 
                 className="flex items-center justify-center gap-2 w-full rounded-xl border border-slate-200 bg-slate-50 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition-colors"

@@ -10,16 +10,13 @@ import { useToast } from "@/components/common/ToastProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  AUTH_COOKIE_NAME,
-  AUTH_COOKIE_VALUE,
-  AUTH_MAX_AGE_SECONDS,
   DEMO_USER_EMAIL,
   DEMO_USER_PASSWORD,
 } from "@/lib/utils/constants";
 import { loginLecturer } from "@/lib/services/account.service";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { showToast } = useToast();
@@ -27,18 +24,16 @@ export default function LoginPage() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     try {
-      const account = await loginLecturer(email.trim(), password);
-      document.cookie = `${AUTH_COOKIE_NAME}=${AUTH_COOKIE_VALUE}; path=/; max-age=${AUTH_MAX_AGE_SECONDS}`;
+      const account = await loginLecturer(identifier.trim(), password);
       sessionStorage.setItem("lecturer_account_identifier", account.gmail);
       sessionStorage.setItem("lecturer_account_name", account.name);
       sessionStorage.setItem("lecturer_account_department", account.department);
       sessionStorage.setItem("lecturer_account_position", account.position);
       sessionStorage.setItem("lecturer_account_id_number", account.idNumber);
-      if (account.sessionToken) {
-        sessionStorage.setItem("lecturer_session_token", account.sessionToken);
-      }
+      sessionStorage.removeItem("lecturer_session_token");
       showToast("Welcome Back!", "Signed in successfully.", "success");
       router.push(account.mustChangePassword ? "/lecturer/profile?changePassword=1" : "/lecturer/dashboard");
       router.refresh();
@@ -51,9 +46,9 @@ export default function LoginPage() {
   };
 
   const useDemoData = () => {
-    setEmail(DEMO_USER_EMAIL);
+    setIdentifier(DEMO_USER_EMAIL);
     setPassword(DEMO_USER_PASSWORD);
-  }
+  };
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-slate-100 sm:p-4">
@@ -85,10 +80,13 @@ export default function LoginPage() {
                 <Mail className="h-5 w-5 text-slate-400" />
               </div>
               <Input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="Email address"
+                type="text"
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
+                placeholder="Email or username"
+                aria-label="Email or username"
+                autoComplete="username"
+                maxLength={254}
                 required
                 className="pl-11 h-14 bg-slate-50 border-slate-200 focus-visible:ring-brand-primary/20 focus-visible:border-brand-primary rounded-2xl font-medium"
               />
@@ -103,6 +101,9 @@ export default function LoginPage() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Password"
+                aria-label="Password"
+                autoComplete="current-password"
+                maxLength={128}
                 required
                 className="pl-11 h-14 bg-slate-50 border-slate-200 focus-visible:ring-brand-primary/20 focus-visible:border-brand-primary rounded-2xl font-medium"
               />
@@ -125,7 +126,7 @@ export default function LoginPage() {
           </Link>
         </div>
 
-        {/* Demo Credentials Helper */}
+        {process.env.NODE_ENV !== "production" && (
         <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
           <div className="flex items-start gap-3">
             <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-500" />
@@ -134,6 +135,7 @@ export default function LoginPage() {
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs font-medium text-slate-600">Use pre-filled demo data.</p>
                 <button 
+                  type="button"
                   onClick={useDemoData}
                   className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 hover:bg-blue-200 px-3 py-1.5 rounded-lg transition-colors"
                 >
@@ -143,6 +145,7 @@ export default function LoginPage() {
             </div>
           </div>
         </div>
+        )}
 
       </div>
     </div>
