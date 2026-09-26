@@ -6,7 +6,10 @@ export async function listRooms(): Promise<Room[]> {
 }
 
 export async function listAvailableRooms(startAt: string, endAt: string): Promise<Room[]> {
-  return apiSend<Room[]>("/api/lecturer/rooms/available", "POST", { startAt, endAt });
+  return apiSend<Room[]>("/api/lecturer/rooms/available", "POST", {
+    startLocal: startAt,
+    endLocal: endAt,
+  });
 }
 
 export async function getRoomById(id: string): Promise<Room | undefined> {

@@ -69,12 +69,16 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Select
+            aria-label="Building"
+            name="building"
             value={building}
             onChange={(event) => setBuilding(event.target.value)}
             options={buildings.map((item) => ({ value: item, label: item }))}
             className="bg-slate-50 h-12"
           />
           <Select
+            aria-label="Room"
+            name="roomId"
             value={form.roomId}
             onChange={(event) => setForm((previous) => ({ ...previous, roomId: event.target.value }))}
             options={filteredRooms.map((room) => ({ value: room.id, label: `${room.code} - ${room.name}` }))}
@@ -89,14 +93,20 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
           <FileText className="h-4 w-4" /> Problem Details
         </div>
         <Input
+          aria-label="Issue title"
+          name="title"
           required
+          maxLength={120}
           value={form.title}
           onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))}
           placeholder="Brief title (e.g. Broken Projector)"
           className="bg-slate-50 h-12 font-semibold"
         />
         <Textarea
+          aria-label="Issue description"
+          name="description"
           required
+          maxLength={1000}
           value={form.description}
           onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))}
           placeholder="Describe the issue in detail..."
@@ -115,6 +125,7 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
               key={level}
               type="button"
               onClick={() => setForm((prev) => ({ ...prev, severity: level }))}
+              aria-pressed={form.severity === level}
               className={`rounded-xl border p-3 text-xs font-bold uppercase tracking-wider transition-all ${
                 form.severity === level
                   ? level === "HIGH" 
@@ -137,6 +148,11 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
           <Camera className="h-4 w-4" /> Attachment (Optional)
         </div>
         <Input
+          aria-label="Attachment image URL"
+          name="imageUrl"
+          type="url"
+          pattern="https?://.*"
+          title="Enter a full http:// or https:// image URL"
           value={form.imageUrl}
           onChange={(event) => setForm((previous) => ({ ...previous, imageUrl: event.target.value }))}
           placeholder="Paste image URL here"
@@ -145,10 +161,11 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
       </div>
 
       {/* Sticky Submit Button */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 p-4 pb-6 backdrop-blur-md border-t border-slate-100 sm:static sm:bg-transparent sm:p-0 sm:border-none sm:backdrop-blur-none sm:mt-6">
+      <div className="fixed bottom-16 left-0 right-0 z-40 bg-white/80 p-4 pb-6 backdrop-blur-md border-t border-slate-100 sm:static sm:bg-transparent sm:p-0 sm:border-none sm:backdrop-blur-none sm:mt-6">
         <div className="mx-auto max-w-md">
           <Button 
             type="submit" 
+            aria-busy={submitting}
             className="w-full h-14 rounded-xl shadow-lg shadow-action-danger/20 bg-action-danger hover:bg-action-danger/90 text-base" 
             disabled={submitting}
           >

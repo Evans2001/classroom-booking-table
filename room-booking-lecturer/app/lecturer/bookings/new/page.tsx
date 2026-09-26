@@ -21,14 +21,22 @@ export default function NewBookingPage() {
   const { showToast } = useToast();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await listRooms();
-      setRooms(data);
-      setLoading(false);
+      try {
+        const data = await listRooms();
+        if (active) setRooms(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load rooms.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, []);
 
   const submit = async (value: BookingInput) => {
@@ -48,7 +56,7 @@ export default function NewBookingPage() {
   };
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-40 sm:pb-24">
       {/* Top Action Bar */}
       <Link href="/lecturer/bookings" className="inline-flex items-center text-sm font-semibold text-slate-500 hover:text-slate-900 transition-colors">
         <ChevronLeft className="mr-1 h-4 w-4" /> Back to Bookings
@@ -73,6 +81,8 @@ export default function NewBookingPage() {
             <div className="h-12 rounded-xl bg-slate-100" />
             <div className="h-24 rounded-xl bg-slate-100" />
           </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">{loadError}</div>
         ) : rooms.length ? (
           <BookingRequestForm
             rooms={rooms}

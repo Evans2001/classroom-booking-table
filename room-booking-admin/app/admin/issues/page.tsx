@@ -17,6 +17,7 @@ import { ISSUE_SEVERITY_LABELS, ISSUE_STATUS_LABELS } from "@/lib/utils/constant
 export default function IssuesPage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<IssueStatus | "ALL">("ALL");
   const [severity, setSeverity] = useState<IssueSeverity | "ALL">("ALL");
@@ -26,14 +27,21 @@ export default function IssuesPage() {
   useEffect(() => {
     let active = true;
     async function loadData() {
-      const data = await listIssues({ search, status, severity });
-      if (!active) return;
-      setIssues(data);
-      setLoading(false);
+      setLoading(true);
+      setLoadError("");
+      try {
+        const data = await listIssues({ search, status, severity });
+        if (active) setIssues(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Unable to load issues.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
-    void loadData();
+    const timer = window.setTimeout(() => void loadData(), 250);
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
   }, [search, severity, status]);
 
@@ -54,11 +62,21 @@ export default function IssuesPage() {
   );
 
   const handleUpdateIssue = async (nextStatus: IssueStatus, note?: string) => {
-    if (!selected) return;
-    await updateIssueStatus(selected.id, nextStatus, note);
-    showToast("Issue updated", "Issue status has been updated.", "success");
-    const data = await listIssues({ search, status, severity });
-    setIssues(data);
+    if (!selected) return false;
+    try {
+      await updateIssueStatus(selected.id, nextStatus, note);
+      showToast("Issue updated", "Issue status has been updated.", "success");
+      const data = await listIssues({ search, status, severity });
+      setIssues(data);
+      return true;
+    } catch (error) {
+      showToast(
+        "Update failed",
+        error instanceof Error ? error.message : "Unable to update issue.",
+        "error",
+      );
+      return false;
+    }
   };
 
   return (
@@ -94,6 +112,8 @@ export default function IssuesPage() {
       </div>
       {loading ? (
         <p className="text-sm text-slate-500">Loading issues...</p>
+      ) : loadError ? (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{loadError}</div>
       ) : issues.length ? (
         <DataTable columns={columns} data={issues} rowKey={(issue) => issue.id} />
       ) : (

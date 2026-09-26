@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -16,8 +19,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializePushNotifications();
   runApp(const LecturerBookingApp());
+  pushNotificationsInitialization = initializePushNotifications();
 }
 
 const brandPrimary = Color(0xFF5C2C30);
@@ -26,6 +29,63 @@ const appBg = Color(0xFFF8FAFC);
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 bool pushNotificationsReady = false;
 bool pushTokenRefreshListenerAttached = false;
+Future<void>? pushNotificationsInitialization;
+String? registeredPushToken;
+
+const campusUtcOffsetMinutes = int.fromEnvironment(
+  'CAMPUS_UTC_OFFSET_MINUTES',
+  defaultValue: 330,
+);
+
+DateTime campusNow() {
+  final shifted = DateTime.now().toUtc().add(
+    const Duration(minutes: campusUtcOffsetMinutes),
+  );
+  return DateTime(
+    shifted.year,
+    shifted.month,
+    shifted.day,
+    shifted.hour,
+    shifted.minute,
+    shifted.second,
+    shifted.millisecond,
+    shifted.microsecond,
+  );
+}
+
+DateTime campusInstantFromIso(String value) {
+  final shifted = DateTime.parse(
+    value,
+  ).toUtc().add(const Duration(minutes: campusUtcOffsetMinutes));
+  return DateTime(
+    shifted.year,
+    shifted.month,
+    shifted.day,
+    shifted.hour,
+    shifted.minute,
+    shifted.second,
+    shifted.millisecond,
+    shifted.microsecond,
+  );
+}
+
+DateTime campusLocalFromApi(Object? localValue, Object? instantValue) {
+  if (localValue is String) {
+    final parsed = DateTime.tryParse(localValue);
+    if (parsed != null) return parsed;
+  }
+  if (instantValue is! String) {
+    throw const FormatException('Booking date/time is missing.');
+  }
+  return campusInstantFromIso(instantValue);
+}
+
+String campusLocalToApi(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}T'
+    '${value.hour.toString().padLeft(2, '0')}:'
+    '${value.minute.toString().padLeft(2, '0')}';
 
 Future<void> initializePushNotifications() async {
   try {
@@ -86,6 +146,28 @@ class LecturerBookingApp extends StatelessWidget {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: const BorderSide(color: brandPrimary, width: 1.6),
+          ),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
           ),
         ),
       ),
@@ -199,13 +281,35 @@ class IssueUpdate {
 }
 
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+const _apiTimeout = Duration(seconds: 15);
+final _apiClient = HttpClient()..connectionTimeout = _apiTimeout;
+
+class ApiException implements Exception {
+  const ApiException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 String get apiBaseUrl {
   final configured = _configuredApiBaseUrl.trim();
   if (configured.isNotEmpty) {
+    if (kReleaseMode && !configured.toLowerCase().startsWith('https://')) {
+      throw const ApiException(
+        'Release builds require an HTTPS API_BASE_URL.',
+      );
+    }
     return configured.endsWith('/')
         ? configured.substring(0, configured.length - 1)
         : configured;
+  }
+
+  if (kReleaseMode) {
+    throw const ApiException(
+      'API_BASE_URL must be configured for release builds.',
+    );
   }
 
   if (Platform.isAndroid) {
@@ -218,38 +322,75 @@ Future<dynamic> apiRequest(
   String path, {
   String method = 'GET',
   Map<String, dynamic>? body,
+  String? sessionTokenOverride,
 }) async {
-  final client = HttpClient();
-  final request = await client.openUrl(method, Uri.parse('$apiBaseUrl$path'));
-  request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-  if (currentLecturerSessionToken.isNotEmpty) {
-    request.headers.set(
-      HttpHeaders.authorizationHeader,
-      'Bearer $currentLecturerSessionToken',
+  try {
+    final request = await _apiClient
+        .openUrl(method, Uri.parse('$apiBaseUrl$path'))
+        .timeout(_apiTimeout);
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    final authorizationToken =
+        sessionTokenOverride ?? currentLecturerSessionToken;
+    if (authorizationToken.isNotEmpty) {
+      request.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $authorizationToken',
+      );
+    }
+    if (body != null) {
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.write(jsonEncode(body));
+    }
+
+    final response = await request.close().timeout(_apiTimeout);
+    final responseText = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(_apiTimeout);
+
+    dynamic decoded;
+    if (responseText.trim().isNotEmpty) {
+      try {
+        decoded = jsonDecode(responseText);
+      } on FormatException {
+        throw const ApiException('The server returned an invalid response.');
+      }
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final serverMessage = decoded is Map<String, dynamic>
+          ? decoded['error']
+          : null;
+      throw ApiException(
+        serverMessage is String && serverMessage.trim().isNotEmpty
+            ? serverMessage
+            : 'The request could not be completed. Please try again.',
+      );
+    }
+    return decoded;
+  } on ApiException {
+    rethrow;
+  } on TimeoutException {
+    throw const ApiException(
+      'The server took too long to respond. Please try again.',
+    );
+  } on SocketException {
+    throw const ApiException(
+      'Cannot reach the booking server. Check your connection and try again.',
+    );
+  } on FormatException {
+    throw const ApiException('The booking server address is invalid.');
+  } on HttpException {
+    throw const ApiException(
+      'The booking server could not complete the request.',
     );
   }
-  request.headers.set('X-Lecturer-Email', currentLecturerIdentifier);
-  request.headers.set('X-Lecturer-Name', currentLecturerName);
-  request.headers.set('X-Lecturer-Department', currentLecturerDepartment);
-  if (body != null) {
-    request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-    request.write(jsonEncode(body));
-  }
-  final response = await request.close();
-  final responseText = await response.transform(utf8.decoder).join();
-  client.close();
+}
 
-  dynamic decoded;
-  if (responseText.isNotEmpty) {
-    decoded = jsonDecode(responseText);
+String userFacingError(Object error) {
+  if (error case ApiException(message: final message)) {
+    return message;
   }
-  if (response.statusCode < 200 || response.statusCode >= 300) {
-    final errorMessage = decoded is Map<String, dynamic>
-        ? decoded['error'] as String? ?? 'Request failed.'
-        : 'Request failed.';
-    throw Exception(errorMessage);
-  }
-  return decoded;
+  return 'Something went wrong. Please try again.';
 }
 
 RoomType roomTypeFromApi(String value) => switch (value) {
@@ -300,8 +441,8 @@ Map<String, dynamic> bookingInputToApi({
 }) => {
   'roomId': room.id,
   'moduleName': moduleName,
-  'startAt': startAt.toIso8601String(),
-  'endAt': endAt.toIso8601String(),
+  'startLocal': campusLocalToApi(startAt),
+  'endLocal': campusLocalToApi(endAt),
   'purpose': purpose,
   'attendees': attendees,
 };
@@ -326,19 +467,19 @@ Booking bookingFromApi(Map<String, dynamic> json) => Booking(
   building: json['building'] as String,
   roomCode: json['roomCode'] as String,
   moduleName: json['moduleName'] as String,
-  startAt: DateTime.parse(json['startAt'] as String).toLocal(),
-  endAt: DateTime.parse(json['endAt'] as String).toLocal(),
+  startAt: campusLocalFromApi(json['startLocal'], json['startAt']),
+  endAt: campusLocalFromApi(json['endLocal'], json['endAt']),
   purpose: json['purpose'] as String,
   attendees: json['attendees'] as int,
   status: bookingStatusFromApi(json['status'] as String),
-  submittedAt: DateTime.parse(json['submittedAt'] as String).toLocal(),
+  submittedAt: campusInstantFromIso(json['submittedAt'] as String),
   reviewerNote: json['reviewerNote'] as String?,
 );
 
 IssueUpdate issueUpdateFromApi(Map<String, dynamic> json) => IssueUpdate(
   status: issueStatusFromApi(json['status'] as String),
   note: json['note'] as String,
-  at: DateTime.parse(json['at'] as String).toLocal(),
+  at: campusInstantFromIso(json['at'] as String),
 );
 
 Issue issueFromApi(Map<String, dynamic> json) => Issue(
@@ -349,33 +490,50 @@ Issue issueFromApi(Map<String, dynamic> json) => Issue(
   description: json['description'] as String,
   severity: issueSeverityFromApi(json['severity'] as String),
   status: issueStatusFromApi(json['status'] as String),
-  createdAt: DateTime.parse(json['createdAt'] as String).toLocal(),
+  createdAt: campusInstantFromIso(json['createdAt'] as String),
   updates: (json['updates'] as List<dynamic>)
       .map((item) => issueUpdateFromApi(item as Map<String, dynamic>))
       .toList(),
 );
 
 Future<void> loadSharedData() async {
-  final roomsJson = await apiRequest('/api/lecturer/rooms') as List<dynamic>;
-  final bookingsJson =
-      await apiRequest('/api/lecturer/bookings') as List<dynamic>;
-  final issuesJson = await apiRequest('/api/lecturer/issues') as List<dynamic>;
+  final sessionToken = currentLecturerSessionToken;
+  final responses = await Future.wait<dynamic>([
+    apiRequest('/api/lecturer/rooms'),
+    apiRequest('/api/lecturer/bookings'),
+    apiRequest('/api/lecturer/issues'),
+  ]);
+  if (responses.any((response) => response is! List<dynamic>)) {
+    throw const ApiException('The server returned an invalid data format.');
+  }
+
+  final roomsJson = responses[0] as List<dynamic>;
+  final bookingsJson = responses[1] as List<dynamic>;
+  final issuesJson = responses[2] as List<dynamic>;
+  if (sessionToken != currentLecturerSessionToken) {
+    return;
+  }
+
+  final nextRooms = roomsJson
+      .map((item) => roomFromApi(item as Map<String, dynamic>))
+      .toList(growable: false);
+  final nextBookings = bookingsJson
+      .map((item) => bookingFromApi(item as Map<String, dynamic>))
+      .toList(growable: false);
+  final nextIssues = issuesJson
+      .map((item) => issueFromApi(item as Map<String, dynamic>))
+      .toList(growable: false);
+  if (sessionToken != currentLecturerSessionToken) return;
 
   rooms
     ..clear()
-    ..addAll(
-      roomsJson.map((item) => roomFromApi(item as Map<String, dynamic>)),
-    );
+    ..addAll(nextRooms);
   bookings
     ..clear()
-    ..addAll(
-      bookingsJson.map((item) => bookingFromApi(item as Map<String, dynamic>)),
-    );
+    ..addAll(nextBookings);
   issues
     ..clear()
-    ..addAll(
-      issuesJson.map((item) => issueFromApi(item as Map<String, dynamic>)),
-    );
+    ..addAll(nextIssues);
 }
 
 Future<void> submitLecturerAccountRequest({
@@ -411,7 +569,6 @@ Future<Map<String, dynamic>> loginLecturerAccount({
 }
 
 Future<Map<String, dynamic>> changeLecturerAccountPassword({
-  required String identifier,
   required String currentPassword,
   required String nextPassword,
 }) async {
@@ -419,7 +576,6 @@ Future<Map<String, dynamic>> changeLecturerAccountPassword({
     '/api/lecturer/auth/change-password',
     method: 'POST',
     body: {
-      'identifier': identifier,
       'currentPassword': currentPassword,
       'nextPassword': nextPassword,
     },
@@ -428,6 +584,7 @@ Future<Map<String, dynamic>> changeLecturerAccountPassword({
 }
 
 Future<void> registerCurrentLecturerPushToken() async {
+  await pushNotificationsInitialization;
   if (!pushNotificationsReady) {
     return;
   }
@@ -439,25 +596,24 @@ Future<void> registerCurrentLecturerPushToken() async {
     await apiRequest(
       '/api/lecturer/push-token',
       method: 'POST',
-      body: {
-        'lecturerEmail': currentLecturerIdentifier,
-        'token': token,
-        'platform': Platform.operatingSystem,
-      },
+      body: {'token': token, 'platform': Platform.operatingSystem},
     );
+    registeredPushToken = token;
     if (!pushTokenRefreshListenerAttached) {
       pushTokenRefreshListenerAttached = true;
       FirebaseMessaging.instance.onTokenRefresh.listen((nextToken) async {
+        final activeSession = currentLecturerSessionToken;
+        if (activeSession.isEmpty) return;
         try {
           await apiRequest(
             '/api/lecturer/push-token',
             method: 'POST',
-            body: {
-              'lecturerEmail': currentLecturerIdentifier,
-              'token': nextToken,
-              'platform': Platform.operatingSystem,
-            },
+            body: {'token': nextToken, 'platform': Platform.operatingSystem},
+            sessionTokenOverride: activeSession,
           );
+          if (currentLecturerSessionToken == activeSession) {
+            registeredPushToken = nextToken;
+          }
         } catch (error) {
           debugPrint('Push token refresh registration failed: $error');
         }
@@ -468,9 +624,53 @@ Future<void> registerCurrentLecturerPushToken() async {
   }
 }
 
-String currentLecturerIdentifier = 'lecturer@eng.ruh.ac.lk';
-String currentLecturerName = 'Demo Lecturer';
-String currentLecturerDepartment = 'Computer Science';
+Future<void> finishRemoteLogout(
+  String sessionToken,
+  String? knownPushToken,
+) async {
+  var pushToken = knownPushToken;
+  if (pushToken == null && pushNotificationsReady) {
+    try {
+      pushToken = await FirebaseMessaging.instance.getToken();
+    } catch (_) {
+      // Session revocation should still continue.
+    }
+  }
+  if (sessionToken.isNotEmpty && pushToken != null) {
+    try {
+      await apiRequest(
+        '/api/lecturer/push-token',
+        method: 'DELETE',
+        body: {'token': pushToken},
+        sessionTokenOverride: sessionToken,
+      );
+    } catch (error) {
+      debugPrint('Push token unregister failed: $error');
+    }
+  }
+  if (sessionToken.isNotEmpty) {
+    try {
+      await apiRequest(
+        '/api/lecturer/auth/logout',
+        method: 'POST',
+        sessionTokenOverride: sessionToken,
+      );
+    } catch (error) {
+      debugPrint('Remote session revocation failed: $error');
+    }
+  }
+  if (pushNotificationsReady) {
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (error) {
+      debugPrint('Local push token deletion failed: $error');
+    }
+  }
+}
+
+String currentLecturerIdentifier = '';
+String currentLecturerName = 'Lecturer';
+String currentLecturerDepartment = '';
 String currentLecturerSessionToken = '';
 
 final rooms = <Room>[
@@ -536,8 +736,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  final formKey = GlobalKey<FormState>();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
+  bool signingIn = false;
+  bool obscurePassword = true;
 
   @override
   void dispose() {
@@ -547,8 +750,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> signIn() async {
+    if (signingIn || !(formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
     final email = emailController.text.trim();
     final password = passwordController.text;
+    setState(() => signingIn = true);
     try {
       final account = await loginLecturerAccount(
         identifier: email,
@@ -559,18 +767,20 @@ class _LoginScreenState extends State<LoginScreen> {
       currentLecturerDepartment =
           account['department'] as String? ?? 'Faculty Department';
       currentLecturerSessionToken = account['sessionToken'] as String? ?? '';
-      await registerCurrentLecturerPushToken();
+      unawaited(registerCurrentLecturerPushToken());
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const LecturerHome()),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    } finally {
+      if (mounted) {
+        setState(() => signingIn = false);
+      }
     }
   }
 
@@ -578,122 +788,199 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                color: brandPrimary,
-                padding: const EdgeInsets.all(28),
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          height: 88,
-                          width: 88,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(26),
-                          ),
-                          child: const Icon(
-                            Icons.school_rounded,
-                            color: Colors.white,
-                            size: 50,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final headerHeight = constraints.maxHeight < 700
+                ? 230.0
+                : constraints.maxHeight * 0.44;
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: headerHeight,
+                      child: Container(
+                        width: double.infinity,
+                        color: brandPrimary,
+                        padding: const EdgeInsets.all(28),
+                        child: Center(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  height: 88,
+                                  width: 88,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(26),
+                                  ),
+                                  child: const Icon(
+                                    Icons.school_rounded,
+                                    color: Colors.white,
+                                    size: 50,
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                const Text(
+                                  'Classroom Booking System',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Faculty of Engineering University of Ruhuna',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.82),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'Classroom Booking System',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Faculty of Engineering University of Ruhuna',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.82),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(24, 22, 24, 28),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(34),
+                        ),
+                      ),
+                      child: Form(
+                        key: formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Welcome Back',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            TextFormField(
+                              controller: emailController,
+                              keyboardType: TextInputType.emailAddress,
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(254),
+                              ],
+                              autofillHints: const [
+                                AutofillHints.username,
+                                AutofillHints.email,
+                              ],
+                              textInputAction: TextInputAction.next,
+                              enabled: !signingIn,
+                              validator: (value) =>
+                                  value == null || value.trim().isEmpty
+                                  ? 'Enter your email or username'
+                                  : null,
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.mail_outline),
+                                labelText: 'Email or username',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: passwordController,
+                              obscureText: obscurePassword,
+                              inputFormatters: [
+                                LengthLimitingTextInputFormatter(128),
+                              ],
+                              autofillHints: const [AutofillHints.password],
+                              textInputAction: TextInputAction.done,
+                              enabled: !signingIn,
+                              onFieldSubmitted: (_) => signIn(),
+                              validator: (value) =>
+                                  value == null || value.isEmpty
+                                  ? 'Enter your password'
+                                  : null,
+                              decoration: InputDecoration(
+                                prefixIcon: const Icon(Icons.lock_outline),
+                                labelText: 'Password',
+                                suffixIcon: IconButton(
+                                  tooltip: obscurePassword
+                                      ? 'Show password'
+                                      : 'Hide password',
+                                  onPressed: () => setState(
+                                    () => obscurePassword = !obscurePassword,
+                                  ),
+                                  icon: Icon(
+                                    obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 54,
+                              child: FilledButton.icon(
+                                onPressed: signingIn ? null : signIn,
+                                icon: signingIn
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.arrow_forward_rounded),
+                                label: Text(
+                                  signingIn ? 'Signing in...' : 'Sign In',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            if (!kReleaseMode)
+                              OutlinedButton.icon(
+                                onPressed: signingIn
+                                    ? null
+                                    : () {
+                                        emailController.text =
+                                            'lecturer@eng.ruh.ac.lk';
+                                        passwordController.text =
+                                            'Lecturer@123';
+                                      },
+                                icon: const Icon(Icons.info_outline),
+                                label: const Text('Auto-fill demo credentials'),
+                              ),
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              onPressed: signingIn
+                                  ? null
+                                  : () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const AccountRequestScreen(),
+                                        ),
+                                      );
+                                    },
+                              icon: const Icon(Icons.person_add_alt_1_outlined),
+                              label: const Text('Create lecturer account'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 28),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Welcome Back',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 18),
-                  TextField(
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.mail_outline),
-                      hintText: 'Email address',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.lock_outline),
-                      hintText: 'Password',
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: FilledButton.icon(
-                      onPressed: () => signIn(),
-                      icon: const Icon(Icons.arrow_forward_rounded),
-                      label: const Text('Sign In'),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      emailController.text = 'lecturer@eng.ruh.ac.lk';
-                      passwordController.text = 'Lecturer@123';
-                    },
-                    icon: const Icon(Icons.info_outline),
-                    label: const Text('Auto-fill demo credentials'),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton.icon(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const AccountRequestScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.person_add_alt_1_outlined),
-                    label: const Text('Create lecturer account'),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -727,6 +1014,7 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
   }
 
   Future<void> submit() async {
+    if (submitting) return;
     if (!(formKey.currentState?.validate() ?? false)) return;
     setState(() => submitting = true);
     try {
@@ -744,11 +1032,9 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
       Navigator.of(context).pop();
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
     } finally {
       if (mounted) setState(() => submitting = false);
     }
@@ -780,6 +1066,11 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
               TextFormField(
                 controller: nameController,
                 validator: requiredField,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.name],
+                inputFormatters: [LengthLimitingTextInputFormatter(120)],
+                enabled: !submitting,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.person_outline),
                   labelText: 'Full name',
@@ -789,6 +1080,10 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
               TextFormField(
                 controller: departmentController,
                 validator: requiredField,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                inputFormatters: [LengthLimitingTextInputFormatter(120)],
+                enabled: !submitting,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.apartment_outlined),
                   labelText: 'Department',
@@ -798,6 +1093,10 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
               TextFormField(
                 controller: positionController,
                 validator: requiredField,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                inputFormatters: [LengthLimitingTextInputFormatter(80)],
+                enabled: !submitting,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.work_outline),
                   labelText: 'Position',
@@ -809,11 +1108,18 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
                 validator: (value) {
                   final required = requiredField(value);
                   if (required != null) return required;
-                  return value!.trim().toLowerCase().endsWith('@gmail.com')
+                  return RegExp(
+                        r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@gmail\.com$",
+                        caseSensitive: false,
+                      ).hasMatch(value!.trim())
                       ? null
-                      : 'Use a Gmail address';
+                      : 'Enter a valid Gmail address';
                 },
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.email],
+                inputFormatters: [LengthLimitingTextInputFormatter(254)],
+                enabled: !submitting,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.mail_outline),
                   labelText: 'Gmail',
@@ -823,6 +1129,10 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
               TextFormField(
                 controller: idNumberController,
                 validator: requiredField,
+                textInputAction: TextInputAction.done,
+                inputFormatters: [LengthLimitingTextInputFormatter(80)],
+                enabled: !submitting,
+                onFieldSubmitted: (_) => submit(),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.badge_outlined),
                   labelText: 'ID number',
@@ -854,6 +1164,9 @@ class LecturerHome extends StatefulWidget {
 
 class _LecturerHomeState extends State<LecturerHome> {
   int index = 0;
+  bool refreshing = false;
+  bool loggingOut = false;
+  Future<void>? refreshOperation;
 
   final pages = const [
     DashboardScreen(),
@@ -876,25 +1189,92 @@ class _LecturerHomeState extends State<LecturerHome> {
   @override
   void initState() {
     super.initState();
-    registerCurrentLecturerPushToken();
     refreshData();
   }
 
   Future<void> refreshData() async {
+    final activeRefresh = refreshOperation;
+    if (activeRefresh != null) {
+      return activeRefresh;
+    }
+
+    final operation = performRefresh();
+    refreshOperation = operation;
+    await operation;
+    if (identical(refreshOperation, operation)) {
+      refreshOperation = null;
+    }
+  }
+
+  Future<void> performRefresh() async {
+    if (mounted) {
+      setState(() => refreshing = true);
+    }
     try {
       await loadSharedData();
       if (mounted) {
         setState(() {});
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Live data sync failed. Showing cached data.'),
+          SnackBar(
+            content: Text(
+              '${userFacingError(error)} Showing the last loaded data.',
+            ),
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => refreshing = false);
+      }
     }
+  }
+
+  Future<void> confirmLogout() async {
+    if (loggingOut) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text(
+          'You will need to sign in again to manage bookings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    final sessionToken = currentLecturerSessionToken;
+    final pushToken = registeredPushToken;
+    setState(() => loggingOut = true);
+    currentLecturerIdentifier = '';
+    currentLecturerName = 'Lecturer';
+    currentLecturerDepartment = '';
+    currentLecturerSessionToken = '';
+    registeredPushToken = null;
+    rooms.clear();
+    bookings.clear();
+    issues.clear();
+    TextInput.finishAutofillContext();
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+    unawaited(finishRemoteLogout(sessionToken, pushToken));
   }
 
   @override
@@ -903,17 +1283,38 @@ class _LecturerHomeState extends State<LecturerHome> {
       appBar: AppBar(
         title: Text(titles[index]),
         actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-            },
-            child: const Text('Logout', style: TextStyle(color: Colors.white)),
+          if (refreshing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 14),
+              child: Center(
+                child: SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                ),
+              ),
+            )
+          else
+            IconButton(
+              tooltip: 'Refresh data',
+              onPressed: refreshData,
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+          IconButton(
+            tooltip: 'Sign out',
+            onPressed: loggingOut ? null : confirmLogout,
+            icon: loggingOut
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout_rounded),
           ),
         ],
       ),
-      body: pages[index],
+      body: RefreshIndicator(onRefresh: refreshData, child: pages[index]),
       floatingActionButton: index == 2
           ? FloatingActionButton.extended(
               onPressed: () => openBookingForm(context),
@@ -974,9 +1375,9 @@ class _LecturerHomeState extends State<LecturerHome> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete booking?'),
+        title: const Text('Cancel booking?'),
         content: Text(
-          'This will remove the ${booking.roomCode} request for ${booking.moduleName}.',
+          'This will cancel the ${booking.roomCode} request for ${booking.moduleName} and retain it in your history.',
         ),
         actions: [
           TextButton(
@@ -990,32 +1391,25 @@ class _LecturerHomeState extends State<LecturerHome> {
                   '/api/lecturer/bookings/${booking.id}',
                   method: 'DELETE',
                 );
-                bookings.removeWhere((item) => item.id == booking.id);
-                if (mounted) {
-                  setState(() {});
-                }
+                await refreshData();
                 if (!dialogContext.mounted || !context.mounted) {
                   return;
                 }
                 Navigator.of(dialogContext).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Booking deleted.')),
+                  const SnackBar(content: Text('Booking cancelled.')),
                 );
               } catch (error) {
                 if (!dialogContext.mounted || !context.mounted) {
                   return;
                 }
                 Navigator.of(dialogContext).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      error.toString().replaceFirst('Exception: ', ''),
-                    ),
-                  ),
-                );
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
               }
             },
-            child: const Text('Delete'),
+            child: const Text('Cancel booking'),
           ),
         ],
       ),
@@ -1035,14 +1429,16 @@ class DashboardScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeBookings = bookings
-        .where(
-          (booking) =>
-              booking.status == BookingStatus.pending ||
-              booking.status == BookingStatus.approved,
-        )
-        .take(3)
-        .toList();
+    final now = campusNow();
+    final activeBookings =
+        bookings
+            .where(
+              (booking) =>
+                  isActiveBooking(booking) && booking.endAt.isAfter(now),
+            )
+            .toList()
+          ..sort((a, b) => a.startAt.compareTo(b.startAt));
+    final upcomingBookings = activeBookings.take(3);
     final home = context.findAncestorStateOfType<_LecturerHomeState>();
 
     return AppScrollView(
@@ -1101,14 +1497,14 @@ class DashboardScreen extends StatelessWidget {
           ],
         ),
         const SectionTitle('Upcoming Bookings'),
-        if (activeBookings.isEmpty)
+        if (upcomingBookings.isEmpty)
           const EmptyPanel(
             icon: Icons.event_available_outlined,
             title: 'No upcoming bookings',
             subtitle: 'Approved and pending requests will appear here.',
           )
         else
-          ...activeBookings.map((booking) => BookingTile(booking: booking)),
+          ...upcomingBookings.map((booking) => BookingTile(booking: booking)),
       ],
     );
   }
@@ -1189,9 +1585,16 @@ class BookingsScreen extends StatelessWidget {
     return AppScrollView(
       children: [
         const SectionTitle('Requests'),
-        ...bookings.map(
-          (booking) => BookingTile(booking: booking, detailed: true),
-        ),
+        if (bookings.isEmpty)
+          const EmptyPanel(
+            icon: Icons.event_note_outlined,
+            title: 'No booking requests',
+            subtitle: 'Tap Book to request your first room.',
+          )
+        else
+          ...bookings.map(
+            (booking) => BookingTile(booking: booking, detailed: true),
+          ),
       ],
     );
   }
@@ -1205,23 +1608,36 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  late DateTime visibleMonth = DateTime(
-    DateTime.now().year,
-    DateTime.now().month,
-  );
-  late DateTime selectedDate = bookings.isNotEmpty
-      ? DateTime(
-          bookings.first.startAt.year,
-          bookings.first.startAt.month,
-          bookings.first.startAt.day,
-        )
-      : DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+  late DateTime visibleMonth;
+  late DateTime selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = campusNow();
+    final activeBookings =
+        bookings
+            .where(
+              (booking) =>
+                  isActiveBooking(booking) && booking.endAt.isAfter(now),
+            )
+            .toList()
+          ..sort((a, b) => a.startAt.compareTo(b.startAt));
+    selectedDate = DateUtils.dateOnly(
+      activeBookings.isEmpty ? now : activeBookings.first.startAt,
+    );
+    visibleMonth = DateTime(selectedDate.year, selectedDate.month);
+  }
 
   @override
   Widget build(BuildContext context) {
     final selectedBookings =
         bookings
-            .where((booking) => isSameDay(booking.startAt, selectedDate))
+            .where(
+              (booking) =>
+                  isActiveBooking(booking) &&
+                  isSameDay(booking.startAt, selectedDate),
+            )
             .toList()
           ..sort((a, b) => a.startAt.compareTo(b.startAt));
 
@@ -1311,7 +1727,14 @@ class IssuesScreen extends StatelessWidget {
     return AppScrollView(
       children: [
         const SectionTitle('Reported Issues'),
-        ...issues.map((issue) => IssueTile(issue: issue)),
+        if (issues.isEmpty)
+          const EmptyPanel(
+            icon: Icons.task_alt_outlined,
+            title: 'No reported issues',
+            subtitle: 'Issues you report will appear here with their status.',
+          )
+        else
+          ...issues.map((issue) => IssueTile(issue: issue)),
       ],
     );
   }
@@ -1327,16 +1750,19 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final currentPasswordController = TextEditingController();
   final nextPasswordController = TextEditingController();
+  final confirmPasswordController = TextEditingController();
   bool submitting = false;
 
   @override
   void dispose() {
     currentPasswordController.dispose();
     nextPasswordController.dispose();
+    confirmPasswordController.dispose();
     super.dispose();
   }
 
   Future<void> changePassword() async {
+    if (submitting) return;
     if (currentPasswordController.text.isEmpty ||
         nextPasswordController.text.length < 8) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1348,26 +1774,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       return;
     }
+    if (nextPasswordController.text != confirmPasswordController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('The new passwords do not match.')),
+      );
+      return;
+    }
     setState(() => submitting = true);
     try {
       await changeLecturerAccountPassword(
-        identifier: currentLecturerIdentifier,
         currentPassword: currentPasswordController.text,
         nextPassword: nextPasswordController.text,
       );
       if (!mounted) return;
       currentPasswordController.clear();
       nextPasswordController.clear();
+      confirmPasswordController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Password changed successfully.')),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
     } finally {
       if (mounted) setState(() => submitting = false);
     }
@@ -1442,6 +1872,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               TextField(
                 controller: currentPasswordController,
                 obscureText: true,
+                enabled: !submitting,
+                autofillHints: const [AutofillHints.password],
+                inputFormatters: [LengthLimitingTextInputFormatter(128)],
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.lock_outline),
                   labelText: 'Current password',
@@ -1451,9 +1884,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
               TextField(
                 controller: nextPasswordController,
                 obscureText: true,
+                enabled: !submitting,
+                autofillHints: const [AutofillHints.newPassword],
+                inputFormatters: [LengthLimitingTextInputFormatter(128)],
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.key_outlined),
                   labelText: 'New password',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmPasswordController,
+                obscureText: true,
+                enabled: !submitting,
+                autofillHints: const [AutofillHints.newPassword],
+                inputFormatters: [LengthLimitingTextInputFormatter(128)],
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.key_outlined),
+                  labelText: 'Confirm new password',
                 ),
               ),
               const SizedBox(height: 14),
@@ -1475,13 +1923,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 class RoomDetailsScreen extends StatelessWidget {
-  const RoomDetailsScreen({required this.room, super.key});
+  const RoomDetailsScreen({
+    required this.room,
+    this.onBook,
+    this.onReportIssue,
+    super.key,
+  });
 
   final Room room;
+  final VoidCallback? onBook;
+  final VoidCallback? onReportIssue;
 
   @override
   Widget build(BuildContext context) {
-    final home = context.findAncestorStateOfType<_LecturerHomeState>();
     return Scaffold(
       appBar: AppBar(title: const Text('Room Details')),
       body: AppScrollView(
@@ -1535,7 +1989,7 @@ class RoomDetailsScreen extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => home?.openIssueForm(context, room),
+                  onPressed: onReportIssue,
                   icon: const Icon(Icons.report_outlined),
                   label: const Text('Report Issue'),
                 ),
@@ -1545,7 +1999,7 @@ class RoomDetailsScreen extends StatelessWidget {
                 child: FilledButton.icon(
                   onPressed: room.status == RoomStatus.unavailable
                       ? null
-                      : () => home?.openBookingForm(context, room: room),
+                      : onBook,
                   icon: const Icon(Icons.add),
                   label: const Text('Book Room'),
                 ),
@@ -1569,32 +2023,43 @@ class BookingFormScreen extends StatefulWidget {
 }
 
 class _BookingFormScreenState extends State<BookingFormScreen> {
-  late Room selectedRoom =
-      widget.defaultRoom ??
-      rooms.firstWhere(
-        (room) => room.id == widget.booking?.roomId,
-        orElse: () => rooms.first,
-      );
+  late final List<Room> availableRooms;
+  Room? selectedRoom;
   final moduleController = TextEditingController();
   final purposeController = TextEditingController();
   final attendeesController = TextEditingController();
-  late DateTime selectedDate =
-      widget.booking?.startAt ?? DateTime.now().add(const Duration(days: 1));
-  late TimeOfDay startTime = widget.booking == null
-      ? const TimeOfDay(hour: 9, minute: 0)
-      : TimeOfDay.fromDateTime(widget.booking!.startAt);
-  late TimeOfDay endTime = widget.booking == null
-      ? const TimeOfDay(hour: 10, minute: 0)
-      : TimeOfDay.fromDateTime(widget.booking!.endAt);
+  late DateTime selectedDate;
+  late TimeOfDay startTime;
+  late TimeOfDay endTime;
+  bool submitting = false;
 
   bool get isEditing => widget.booking != null;
 
   @override
   void initState() {
     super.initState();
+    availableRooms = List.unmodifiable(
+      rooms.where(
+        (room) =>
+            room.status != RoomStatus.unavailable ||
+            (isEditing && room.id == widget.booking?.roomId),
+      ),
+    );
+    final preferredRoomId = widget.defaultRoom?.id ?? widget.booking?.roomId;
+    selectedRoom = roomWithId(availableRooms, preferredRoomId);
+    if (!isEditing && selectedRoom == null && availableRooms.isNotEmpty) {
+      selectedRoom = availableRooms.first;
+    }
+
+    final initialStart = widget.booking?.startAt ?? nextWholeHour(campusNow());
+    final initialEnd =
+        widget.booking?.endAt ?? initialStart.add(const Duration(hours: 1));
+    selectedDate = DateUtils.dateOnly(initialStart);
+    startTime = TimeOfDay.fromDateTime(initialStart);
+    endTime = TimeOfDay.fromDateTime(initialEnd);
     moduleController.text = widget.booking?.moduleName ?? '';
     purposeController.text = widget.booking?.purpose ?? '';
-    attendeesController.text = '${widget.booking?.attendees ?? 30}';
+    attendeesController.text = '${widget.booking?.attendees ?? 1}';
   }
 
   @override
@@ -1606,12 +2071,32 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   }
 
   Future<void> submit() async {
+    if (submitting) {
+      return;
+    }
+    final room = selectedRoom;
     final module = moduleController.text.trim();
     final purpose = purposeController.text.trim();
     final attendees = int.tryParse(attendeesController.text.trim()) ?? 0;
+    if (room == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No rooms are currently available.')),
+      );
+      return;
+    }
     if (module.isEmpty || purpose.isEmpty || attendees <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Complete the booking details.')),
+      );
+      return;
+    }
+    if (attendees > room.capacity) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${room.name} can accommodate up to ${room.capacity} attendees.',
+          ),
+        ),
       );
       return;
     }
@@ -1635,7 +2120,23 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       );
       return;
     }
+    if (!start.isAfter(campusNow())) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Start time must be in the future.')),
+      );
+      return;
+    }
+    if (end.difference(start) > const Duration(hours: 12)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A booking cannot be longer than 12 hours.'),
+        ),
+      );
+      return;
+    }
 
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => submitting = true);
     try {
       final response = await apiRequest(
         isEditing
@@ -1643,7 +2144,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
             : '/api/lecturer/bookings',
         method: isEditing ? 'PUT' : 'POST',
         body: bookingInputToApi(
-          room: selectedRoom,
+          room: room,
           moduleName: module,
           startAt: start,
           endAt: end,
@@ -1681,101 +2182,178 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    } finally {
+      if (mounted) {
+        setState(() => submitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(isEditing ? 'Edit Booking' : 'Request Space')),
-      body: AppScrollView(
-        children: [
-          DropdownButtonFormField<Room>(
-            initialValue: selectedRoom,
-            items: rooms
-                .where((room) => room.status != RoomStatus.unavailable)
-                .map(
-                  (room) => DropdownMenuItem(
-                    value: room,
-                    child: Text('${room.code} - ${room.name}'),
+    final room = selectedRoom;
+    return PopScope(
+      canPop: !submitting,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(isEditing ? 'Edit Booking' : 'Request Space'),
+        ),
+        body: room == null
+            ? AppScrollView(
+                children: [
+                  EmptyPanel(
+                    icon: Icons.meeting_room_outlined,
+                    title: isEditing
+                        ? 'Original room unavailable'
+                        : 'No bookable rooms',
+                    subtitle: isEditing
+                        ? 'This booking room no longer exists. Go back and refresh before editing.'
+                        : 'There are no available rooms right now. Refresh and try again later.',
                   ),
-                )
-                .toList(),
-            onChanged: (value) =>
-                setState(() => selectedRoom = value ?? selectedRoom),
-            decoration: const InputDecoration(labelText: 'Room'),
-          ),
-          TextField(
-            controller: moduleController,
-            decoration: const InputDecoration(labelText: 'Module name'),
-          ),
-          TextField(
-            controller: purposeController,
-            maxLines: 3,
-            decoration: const InputDecoration(labelText: 'Purpose'),
-          ),
-          TextField(
-            controller: attendeesController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Expected attendees',
-              helperText: 'Room capacity: ${selectedRoom.capacity} seats',
-            ),
-          ),
-          Wrap(
-            spacing: 10,
-            children: [
-              ActionChip(
-                avatar: const Icon(Icons.calendar_month),
-                label: Text(dateLabel(selectedDate)),
-                onPressed: () async {
-                  final value = await showDatePicker(
-                    context: context,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now().add(const Duration(days: 365)),
-                    initialDate: selectedDate,
-                  );
-                  if (value != null) setState(() => selectedDate = value);
-                },
+                ],
+              )
+            : AppScrollView(
+                children: [
+                  const SectionTitle('Room and purpose'),
+                  DropdownButtonFormField<Room>(
+                    initialValue: room,
+                    isExpanded: true,
+                    items: availableRooms
+                        .map(
+                          (room) => DropdownMenuItem(
+                            value: room,
+                            child: Text(
+                              '${room.code} - ${room.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: submitting
+                        ? null
+                        : (value) =>
+                              setState(() => selectedRoom = value ?? room),
+                    decoration: const InputDecoration(labelText: 'Room'),
+                  ),
+                  TextField(
+                    controller: moduleController,
+                    enabled: !submitting,
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    maxLength: 100,
+                    decoration: const InputDecoration(labelText: 'Module name'),
+                  ),
+                  TextField(
+                    controller: purposeController,
+                    enabled: !submitting,
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 3,
+                    maxLength: 500,
+                    decoration: const InputDecoration(labelText: 'Purpose'),
+                  ),
+                  TextField(
+                    controller: attendeesController,
+                    enabled: !submitting,
+                    keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: 'Expected attendees',
+                      helperText: 'Room capacity: ${room.capacity} seats',
+                    ),
+                  ),
+                  const SectionTitle('Date and time'),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.calendar_month),
+                        label: Text(dateLabel(selectedDate)),
+                        onPressed: submitting
+                            ? null
+                            : () async {
+                                final today = DateUtils.dateOnly(campusNow());
+                                final standardLastDate = today.add(
+                                  const Duration(days: 365),
+                                );
+                                final lastDate =
+                                    selectedDate.isAfter(standardLastDate)
+                                    ? selectedDate
+                                    : standardLastDate;
+                                final initialDate = selectedDate.isBefore(today)
+                                    ? today
+                                    : selectedDate;
+                                final value = await showDatePicker(
+                                  context: context,
+                                  firstDate: today,
+                                  lastDate: lastDate,
+                                  initialDate: initialDate,
+                                  helpText: 'Select booking date',
+                                );
+                                if (value != null && mounted) {
+                                  setState(() => selectedDate = value);
+                                }
+                              },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.schedule),
+                        label: Text(startTime.format(context)),
+                        onPressed: submitting
+                            ? null
+                            : () async {
+                                final value = await showTimePicker(
+                                  context: context,
+                                  initialTime: startTime,
+                                  helpText: 'Select start time',
+                                );
+                                if (value != null && mounted) {
+                                  setState(() => startTime = value);
+                                }
+                              },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.schedule_send_outlined),
+                        label: Text(endTime.format(context)),
+                        onPressed: submitting
+                            ? null
+                            : () async {
+                                final value = await showTimePicker(
+                                  context: context,
+                                  initialTime: endTime,
+                                  helpText: 'Select end time',
+                                );
+                                if (value != null && mounted) {
+                                  setState(() => endTime = value);
+                                }
+                              },
+                      ),
+                    ],
+                  ),
+                  SizedBox(
+                    height: 54,
+                    child: FilledButton.icon(
+                      onPressed: submitting ? null : submit,
+                      icon: submitting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_outlined),
+                      label: Text(
+                        submitting
+                            ? 'Saving...'
+                            : isEditing
+                            ? 'Save Changes'
+                            : 'Submit Request',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              ActionChip(
-                avatar: const Icon(Icons.schedule),
-                label: Text(startTime.format(context)),
-                onPressed: () async {
-                  final value = await showTimePicker(
-                    context: context,
-                    initialTime: startTime,
-                  );
-                  if (value != null) setState(() => startTime = value);
-                },
-              ),
-              ActionChip(
-                avatar: const Icon(Icons.schedule_send_outlined),
-                label: Text(endTime.format(context)),
-                onPressed: () async {
-                  final value = await showTimePicker(
-                    context: context,
-                    initialTime: endTime,
-                  );
-                  if (value != null) setState(() => endTime = value);
-                },
-              ),
-            ],
-          ),
-          SizedBox(
-            height: 54,
-            child: FilledButton.icon(
-              onPressed: submit,
-              icon: const Icon(Icons.send_outlined),
-              label: Text(isEditing ? 'Save Changes' : 'Submit Request'),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -1791,10 +2369,22 @@ class IssueFormScreen extends StatefulWidget {
 }
 
 class _IssueFormScreenState extends State<IssueFormScreen> {
-  late Room selectedRoom = widget.defaultRoom ?? rooms.first;
+  late final List<Room> formRooms;
+  Room? selectedRoom;
   IssueSeverity severity = IssueSeverity.medium;
   final titleController = TextEditingController();
   final descriptionController = TextEditingController();
+  bool submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    formRooms = List.unmodifiable(rooms);
+    selectedRoom = roomWithId(formRooms, widget.defaultRoom?.id);
+    if (selectedRoom == null && formRooms.isNotEmpty) {
+      selectedRoom = formRooms.first;
+    }
+  }
 
   @override
   void dispose() {
@@ -1804,20 +2394,32 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
   }
 
   Future<void> submit() async {
+    if (submitting) {
+      return;
+    }
+    final room = selectedRoom;
     final title = titleController.text.trim();
     final description = descriptionController.text.trim();
+    if (room == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No rooms are available to report.')),
+      );
+      return;
+    }
     if (title.isEmpty || description.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add an issue title and description.')),
       );
       return;
     }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => submitting = true);
     try {
       final response = await apiRequest(
         '/api/lecturer/issues',
         method: 'POST',
         body: {
-          'roomId': selectedRoom.id,
+          'roomId': room.id,
           'title': title,
           'description': description,
           'severity': issueSeverityToApi(severity),
@@ -1831,65 +2433,106 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error.toString().replaceFirst('Exception: ', '')),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    } finally {
+      if (mounted) {
+        setState(() => submitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Report Issue')),
-      body: AppScrollView(
-        children: [
-          DropdownButtonFormField<Room>(
-            initialValue: selectedRoom,
-            items: rooms
-                .map(
-                  (room) => DropdownMenuItem(
-                    value: room,
-                    child: Text('${room.code} - ${room.name}'),
+    final room = selectedRoom;
+    return PopScope(
+      canPop: !submitting,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Report Issue')),
+        body: room == null
+            ? const AppScrollView(
+                children: [
+                  EmptyPanel(
+                    icon: Icons.meeting_room_outlined,
+                    title: 'No rooms found',
+                    subtitle:
+                        'Refresh the room list before submitting an issue report.',
                   ),
-                )
-                .toList(),
-            onChanged: (value) =>
-                setState(() => selectedRoom = value ?? selectedRoom),
-            decoration: const InputDecoration(labelText: 'Room'),
-          ),
-          DropdownButtonFormField<IssueSeverity>(
-            initialValue: severity,
-            items: IssueSeverity.values
-                .map(
-                  (value) => DropdownMenuItem(
-                    value: value,
-                    child: Text(issueSeverityLabel(value)),
+                ],
+              )
+            : AppScrollView(
+                children: [
+                  const SectionTitle('Issue details'),
+                  DropdownButtonFormField<Room>(
+                    initialValue: room,
+                    isExpanded: true,
+                    items: formRooms
+                        .map(
+                          (room) => DropdownMenuItem(
+                            value: room,
+                            child: Text(
+                              '${room.code} - ${room.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: submitting
+                        ? null
+                        : (value) =>
+                              setState(() => selectedRoom = value ?? room),
+                    decoration: const InputDecoration(labelText: 'Room'),
                   ),
-                )
-                .toList(),
-            onChanged: (value) => setState(() => severity = value ?? severity),
-            decoration: const InputDecoration(labelText: 'Severity'),
-          ),
-          TextField(
-            controller: titleController,
-            decoration: const InputDecoration(labelText: 'Issue title'),
-          ),
-          TextField(
-            controller: descriptionController,
-            maxLines: 4,
-            decoration: const InputDecoration(labelText: 'Description'),
-          ),
-          SizedBox(
-            height: 54,
-            child: FilledButton.icon(
-              onPressed: submit,
-              icon: const Icon(Icons.send_outlined),
-              label: const Text('Submit Issue'),
-            ),
-          ),
-        ],
+                  DropdownButtonFormField<IssueSeverity>(
+                    initialValue: severity,
+                    items: IssueSeverity.values
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(issueSeverityLabel(value)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: submitting
+                        ? null
+                        : (value) =>
+                              setState(() => severity = value ?? severity),
+                    decoration: const InputDecoration(labelText: 'Severity'),
+                  ),
+                TextField(
+                  controller: titleController,
+                    enabled: !submitting,
+                    textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.next,
+                  maxLength: 120,
+                    decoration: const InputDecoration(labelText: 'Issue title'),
+                  ),
+                  TextField(
+                    controller: descriptionController,
+                    enabled: !submitting,
+                  textCapitalization: TextCapitalization.sentences,
+                  maxLines: 4,
+                  maxLength: 2000,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                  ),
+                  SizedBox(
+                    height: 54,
+                    child: FilledButton.icon(
+                      onPressed: submitting ? null : submit,
+                      icon: submitting
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send_outlined),
+                      label: Text(
+                        submitting ? 'Submitting...' : 'Submit Issue',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -1946,10 +2589,21 @@ class RoomTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final home = context.findAncestorStateOfType<_LecturerHomeState>();
     return CardPanel(
       onTap: () {
         Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => RoomDetailsScreen(room: room)),
+          MaterialPageRoute(
+            builder: (_) => RoomDetailsScreen(
+              room: room,
+              onBook: home == null
+                  ? null
+                  : () => home.openBookingForm(context, room: room),
+              onReportIssue: home == null
+                  ? null
+                  : () => home.openIssueForm(context, room),
+            ),
+          ),
         );
       },
       child: Column(
@@ -2102,7 +2756,7 @@ class _CalendarDayCell extends StatelessWidget {
       (booking) => isSameDay(booking.startAt, date),
     );
     final isSelected = isSameDay(selectedDate, date);
-    final isToday = isSameDay(DateTime.now(), date);
+    final isToday = isSameDay(campusNow(), date);
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
@@ -2153,6 +2807,8 @@ class BookingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final canManage =
+        isActiveBooking(booking) && booking.startAt.isAfter(campusNow());
     final home = context.findAncestorStateOfType<_LecturerHomeState>();
 
     return CardPanel(
@@ -2222,7 +2878,7 @@ class BookingTile extends StatelessWidget {
               ),
             ],
           ),
-          if (detailed) ...[
+          if (detailed && canManage) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -2238,8 +2894,8 @@ class BookingTile extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () => home?.deleteBooking(context, booking),
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('Delete'),
+                    icon: const Icon(Icons.cancel_outlined, size: 18),
+                    label: const Text('Cancel'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFDC2626),
                     ),
@@ -2579,6 +3235,27 @@ class InfoRow extends StatelessWidget {
   }
 }
 
+Room? roomWithId(Iterable<Room> source, String? id) {
+  if (id == null) {
+    return null;
+  }
+  for (final room in source) {
+    if (room.id == id) {
+      return room;
+    }
+  }
+  return null;
+}
+
+DateTime nextWholeHour(DateTime now) {
+  return DateTime(
+    now.year,
+    now.month,
+    now.day,
+    now.hour,
+  ).add(const Duration(hours: 1));
+}
+
 String roomTypeLabel(RoomType type) => switch (type) {
   RoomType.lectureHall => 'Lecture Hall',
   RoomType.lab => 'Lab',
@@ -2603,6 +3280,10 @@ String bookingStatusLabel(BookingStatus status) => switch (status) {
   BookingStatus.rejected => 'Rejected',
   BookingStatus.cancelled => 'Cancelled',
 };
+
+bool isActiveBooking(Booking booking) =>
+    booking.status == BookingStatus.pending ||
+    booking.status == BookingStatus.approved;
 
 Color bookingStatusColor(BookingStatus status) => switch (status) {
   BookingStatus.pending => const Color(0xFFD97706),

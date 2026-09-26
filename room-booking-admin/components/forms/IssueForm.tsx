@@ -21,6 +21,7 @@ export function IssueForm({ initialStatus, onSubmit }: IssueFormProps) {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     try {
       await onSubmit(status, note);
@@ -43,6 +44,7 @@ export function IssueForm({ initialStatus, onSubmit }: IssueFormProps) {
             { label: ISSUE_STATUS_LABELS.CLOSED, value: "CLOSED" },
           ]}
           onChange={(event) => setStatus(event.target.value as IssueStatus)}
+          disabled={submitting}
         />
       </div>
       <div className="space-y-1">
@@ -52,6 +54,8 @@ export function IssueForm({ initialStatus, onSubmit }: IssueFormProps) {
           value={note}
           onChange={(event) => setNote(event.target.value)}
           placeholder="Add a note for this transition..."
+          disabled={submitting}
+          maxLength={1000}
         />
       </div>
       <Button type="submit" disabled={submitting}>

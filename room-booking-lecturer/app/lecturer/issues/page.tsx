@@ -21,17 +21,25 @@ const concernFilters: Array<{ key: ConcernFilter; label: string }> = [
 export default function IssuesPage() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [historyDays, setHistoryDays] = useState(20);
   const [visibleCount, setVisibleCount] = useState(5);
   const [concernFilter, setConcernFilter] = useState<ConcernFilter>("CONCERNED");
 
   useEffect(() => {
+    let active = true;
     async function loadData() {
-      const data = await listMyIssues();
-      setIssues(data);
-      setLoading(false);
+      try {
+        const data = await listMyIssues();
+        if (active) setIssues(data);
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : "Could not load issues.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
     void loadData();
+    return () => { active = false; };
   }, []);
 
   const filtered = useMemo(() => {
@@ -92,6 +100,7 @@ export default function IssuesPage() {
                     : "text-slate-500 hover:text-slate-700"
                 }`}
                 onClick={() => setConcernFilter(item.key)}
+                aria-pressed={concernFilter === item.key}
               >
                 {item.label}
               </button>
@@ -109,6 +118,11 @@ export default function IssuesPage() {
 
       {/* Main List Area */}
       <div className="space-y-4">
+        {loadError ? (
+          <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-700">
+            {loadError}
+          </div>
+        ) : null}
         {loading ? (
           <div className="animate-pulse space-y-4">
             {[1, 2, 3].map((i) => (
@@ -117,7 +131,7 @@ export default function IssuesPage() {
           </div>
         ) : null}
 
-        {!loading && !issues.length ? (
+        {!loading && !loadError && !issues.length ? (
           <div className="pt-8">
             <EmptyState
               title="No issues reported"
@@ -129,7 +143,7 @@ export default function IssuesPage() {
               }
             />
           </div>
-        ) : !loading && !visible.length ? (
+        ) : !loading && !loadError && !visible.length ? (
           <div className="pt-8">
             <EmptyState
               title="No issues in this view"
@@ -169,6 +183,7 @@ export default function IssuesPage() {
       <div className="fixed bottom-[88px] right-4 z-40 pb-safe">
         <Link 
           href="/lecturer/issues/new"
+          aria-label="Report an issue"
           className="flex h-14 w-14 items-center justify-center rounded-full bg-action-danger text-white shadow-lg shadow-action-danger/40 transition-transform hover:scale-105 active:scale-95"
         >
           <Plus className="h-6 w-6" />
