@@ -3,6 +3,7 @@ export const CAMPUS_TIME_ZONE =
 
 const LOCAL_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/;
 const MINUTE_IN_MILLISECONDS = 60_000;
+const MIN_BOOKING_NOTICE_MINUTES = 60;
 const MAX_BOOKING_MINUTES = 12 * 60;
 const MAX_ADVANCE_MINUTES = 366 * 24 * 60;
 
@@ -42,7 +43,7 @@ export function campusDateKey(value: string | Date): string {
 
 export function getMinCampusDateTimeInputValue(now = new Date()): string {
   const nextWholeMinute = new Date(
-    Math.floor(now.getTime() / MINUTE_IN_MILLISECONDS) * MINUTE_IN_MILLISECONDS +
+    Math.ceil(now.getTime() / MINUTE_IN_MILLISECONDS + MIN_BOOKING_NOTICE_MINUTES) *
       MINUTE_IN_MILLISECONDS,
   );
   return toCampusDateTimeLocal(nextWholeMinute);
@@ -72,6 +73,9 @@ export function validateCampusBookingWindow(
     return "Choose valid start and end times.";
   }
   if (startMinute <= currentMinute) return "Start time must be in the future.";
+  if (startAt < getMinCampusDateTimeInputValue(now)) {
+    return "Bookings must be requested at least 1 hour before the start time.";
+  }
   if (endMinute <= startMinute) return "End time must be later than start time.";
   if (startAt.slice(0, 10) !== endAt.slice(0, 10)) {
     return "Bookings must start and end on the same campus day.";

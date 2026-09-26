@@ -1,6 +1,7 @@
 import { formatCampusDate } from "@/lib/utils/campus-date-time";
 
 const MINUTE_IN_MILLISECONDS = 60_000;
+const MIN_BOOKING_NOTICE_IN_MILLISECONDS = 60 * MINUTE_IN_MILLISECONDS;
 const MAX_BOOKING_DURATION_IN_MILLISECONDS = 12 * 60 * MINUTE_IN_MILLISECONDS;
 const MAX_BOOKING_ADVANCE_IN_MILLISECONDS = 366 * 24 * 60 * MINUTE_IN_MILLISECONDS;
 
@@ -29,6 +30,9 @@ export function assertFutureBookingWindow(
   if (startAt <= now) {
     throw new Error("Booking start date/time must be in the future.");
   }
+  if (startAt.getTime() - now.getTime() < MIN_BOOKING_NOTICE_IN_MILLISECONDS) {
+    throw new Error("Bookings must be requested at least 1 hour before the start time.");
+  }
   if (formatCampusDate(startAt) !== formatCampusDate(endAt)) {
     throw new Error("Bookings must start and end on the same campus day.");
   }
@@ -41,14 +45,14 @@ export function assertFutureBookingWindow(
 }
 
 /**
- * Returns the first whole minute that is still in the future. `datetime-local`
- * fields cannot represent seconds, so returning the current minute would be
- * rejected by the server for most of that minute.
+ * Returns the first whole minute at least one hour from now.
+ * Round up because datetime-local fields cannot represent seconds.
  */
 export function getMinBookingDateTimeInputValue(now = new Date()): string {
-  const min = new Date(now.getTime());
-  min.setSeconds(0, 0);
-  min.setTime(min.getTime() + MINUTE_IN_MILLISECONDS);
+  const min = new Date(
+    Math.ceil((now.getTime() + MIN_BOOKING_NOTICE_IN_MILLISECONDS) / MINUTE_IN_MILLISECONDS) *
+      MINUTE_IN_MILLISECONDS,
+  );
 
   const year = min.getFullYear();
   const month = `${min.getMonth() + 1}`.padStart(2, "0");
