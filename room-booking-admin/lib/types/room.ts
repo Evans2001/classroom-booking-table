@@ -3,10 +3,8 @@ export type RoomType = "LECTURE_HALL" | "LAB" | "MEETING_ROOM";
 
 export interface Room {
   id: string;
-  code: string;
+  roomNumber: string;
   name: string;
-  building: string;
-  floor: number;
   capacity: number;
   type: RoomType;
   hasProjector: boolean;
@@ -22,5 +20,5 @@ export interface RoomFilters {
   type?: RoomType | "ALL";
 }
 
-export type CreateRoomInput = Omit<Room, "id" | "createdAt" | "updatedAt">;
+export type CreateRoomInput = Omit<Room, "id" | "roomNumber" | "createdAt" | "updatedAt">;
 export type UpdateRoomInput = Partial<CreateRoomInput>;

@@ -3,7 +3,7 @@ export interface LecturerAccountRequestInput {
   department: string;
   position: string;
   gmail: string;
-  idNumber: string;
+  idNumber?: string;
 }
 
 export interface LecturerAccountRequest {

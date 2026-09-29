@@ -28,3 +28,23 @@ Example release build:
 ```bash
 flutter build appbundle --release --dart-define=API_BASE_URL=https://booking.example.edu
 ```
+
+## Lecturer IDs
+
+The server assigns a unique three-digit lecturer ID (`001` through `999`) when an account request is submitted. It appears in the signup confirmation, lecturer profile, and admin user/request lists. Approval retains the same ID. Existing accounts and requests are migrated automatically, including timetable references to their previous IDs. Internal account keys and sessions remain intact.
+
+Issued IDs are never reused, including after rejection or deletion. Once `999` is issued, new registrations return a capacity error. Use the assigned lecturer ID in timetable imports to distinguish lecturers with the same name.
+
+## Optimized local phone build
+
+For the connected ARM64 Samsung phone, use an AOT profile build while the backend is local:
+
+```powershell
+flutter build apk --profile --target-platform android-arm64 --split-per-abi --dart-define=API_BASE_URL=http://127.0.0.1:3000
+adb reverse tcp:3000 tcp:3000
+adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk
+```
+
+Profile mode supports local HTTP and performance testing; it is not a production-signed release. The tested profile APK is 27,257,587 bytes versus the previous universal debug APK at 164,695,684 bytes (83.4% smaller). This compares build modes and CPU architectures, not equivalent release artifacts. USB forwarding must be restored after reconnecting the phone.
+
+The app reuses HTTP connections, aborts timed-out requests, refreshes after returning to the foreground or receiving a push update, and redirects expired sessions to login. Room rows are built lazily as they become visible.

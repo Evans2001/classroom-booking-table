@@ -23,10 +23,7 @@ describe("rooms.service", () => {
 
   it("creates a new room", async () => {
     const input = {
-      code: "MR-999",
       name: "Test Room",
-      building: "Block C",
-      floor: 1,
       capacity: 10,
       type: "MEETING_ROOM",
       hasProjector: false,

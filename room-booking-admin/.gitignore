@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local production validation and database runtime files
+/.next-production/
+/data/*-wal
+/data/*-shm
+/data/room-booking-before-*.sqlite
+/admin-server.*.log
+/production-server.*.log

@@ -58,7 +58,7 @@ export function BookingCard({ booking, onDelete }: BookingCardProps) {
               <h3 className="font-bold text-slate-900 leading-tight">{booking.roomName}</h3>
               <div className="mt-0.5 flex items-center gap-1 text-xs font-medium text-slate-500">
                 <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{booking.building} - {booking.roomCode}</span>
+                <span className="truncate">{booking.roomName}</span>
               </div>
             </div>
             <StatusBadge status={booking.status} />
