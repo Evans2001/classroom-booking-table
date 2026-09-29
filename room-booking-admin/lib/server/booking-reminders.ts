@@ -16,7 +16,6 @@ interface DueBooking {
   start_at: string;
   room_name: string;
   room_code: string;
-  building: string;
 }
 
 /** Persistent per-destination receipts survive restarts and coordinate server instances. */
@@ -36,7 +35,7 @@ export async function sendDueBookingReminders(now = new Date()): Promise<void> {
   )`);
   const bookings = db.prepare(`
     SELECT b.id, b.requester_email, b.requester_name, b.module_name, b.start_at,
-           r.name AS room_name, r.code AS room_code, r.building
+           r.name AS room_name, r.room_number AS room_code
     FROM booking_requests b JOIN rooms r ON r.id = b.room_id
     WHERE b.status = 'APPROVED'
       AND julianday(b.start_at) > julianday(?)
@@ -55,7 +54,7 @@ export async function sendDueBookingReminders(now = new Date()): Promise<void> {
     ];
     const start = new Date(booking.start_at);
     const subject = "Upcoming lecture reminder";
-    const details = `${booking.module_name || "Your lecture"} starts at ${formatCampusTime(start)} on ${formatCampusDate(start)} (${CAMPUS_TIME_ZONE}) in ${booking.room_name} (${booking.room_code}), ${booking.building}.`;
+    const details = `${booking.module_name || "Your lecture"} starts at ${formatCampusTime(start)} on ${formatCampusDate(start)} (${CAMPUS_TIME_ZONE}) in ${booking.room_name} (${booking.room_code}).`;
     for (const { channel, destination } of destinations) {
       // Recheck after each asynchronous delivery in case the booking was edited or cancelled.
       const active = db.prepare("SELECT id FROM booking_requests WHERE id = ? AND start_at = ? AND status = 'APPROVED' AND requester_email = ?")

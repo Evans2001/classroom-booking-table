@@ -5,8 +5,7 @@ export interface Booking {
   requesterName: string;
   roomId: string;
   roomName: string;
-  building: string;
-  roomCode: string;
+  roomNumber: string;
   moduleName: string;
   startAt: string;
   endAt: string;

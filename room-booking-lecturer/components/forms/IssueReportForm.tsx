@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Building2, AlertCircle, FileText, Camera } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,7 @@ interface IssueReportFormProps {
 }
 
 export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportFormProps) {
-  const buildings = useMemo(
-    () => Array.from(new Set(rooms.map((room) => room.building))).sort(),
-    [rooms],
-  );
   const initialRoom = rooms.find((room) => room.id === defaultRoomId) ?? rooms[0];
-  const [building, setBuilding] = useState(initialRoom?.building ?? buildings[0] ?? "");
   const [form, setForm] = useState<IssueInput>({
     roomId: initialRoom?.id ?? "",
     title: "",
@@ -32,10 +27,7 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const filteredRooms = useMemo(
-    () => rooms.filter((room) => room.building === building),
-    [rooms, building],
-  );
+  const filteredRooms = rooms;
 
   useEffect(() => {
     if (!filteredRooms.length) {
@@ -65,23 +57,15 @@ export function IssueReportForm({ rooms, defaultRoomId, onSubmit }: IssueReportF
       {/* Location Section */}
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
-          <Building2 className="h-4 w-4" /> Location
+          <Building2 className="h-4 w-4" /> Room
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Select
-            aria-label="Building"
-            name="building"
-            value={building}
-            onChange={(event) => setBuilding(event.target.value)}
-            options={buildings.map((item) => ({ value: item, label: item }))}
-            className="bg-slate-50 h-12"
-          />
+        <div className="grid grid-cols-1 gap-3">
           <Select
             aria-label="Room"
             name="roomId"
             value={form.roomId}
             onChange={(event) => setForm((previous) => ({ ...previous, roomId: event.target.value }))}
-            options={filteredRooms.map((room) => ({ value: room.id, label: `${room.code} - ${room.name}` }))}
+            options={filteredRooms.map((room) => ({ value: room.id, label: `${room.name}` }))}
             className="bg-slate-50 h-12 font-medium"
           />
         </div>

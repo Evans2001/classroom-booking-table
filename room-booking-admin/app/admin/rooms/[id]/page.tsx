@@ -63,7 +63,7 @@ export default function RoomDetailPage() {
           <div>
             <CardTitle>{room.name}</CardTitle>
             <CardDescription>
-              {room.code} - {room.building} / Floor {room.floor}
+              {room.roomNumber}
             </CardDescription>
           </div>
           <Button onClick={() => setEditOpen(true)}>Edit Room</Button>

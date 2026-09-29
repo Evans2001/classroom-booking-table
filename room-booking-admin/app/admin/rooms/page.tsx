@@ -105,7 +105,7 @@ export default function RoomsPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex w-full flex-col gap-2 md:max-w-3xl md:flex-row">
           <Input
-            placeholder="Search room, code, or building..."
+            placeholder="Search room, room ID..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />

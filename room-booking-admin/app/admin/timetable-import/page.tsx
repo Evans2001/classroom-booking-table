@@ -6,19 +6,19 @@ import { useToast } from "@/components/common/ToastProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { parseTimetableCell } from "@/lib/utils/timetable-cell";
 import { Label } from "@/components/ui/label";
 
 interface TimetableRecord {
   semester: string;
   department: string;
   batch: string;
-  lecturerName: string;
   lecturerId: string;
   dayOfWeek: string;
   startTime: string;
   endTime: string;
   moduleCode: string;
-  roomCode: string;
+  roomNumber: string;
 }
 
 interface ImportResult {
@@ -150,32 +150,25 @@ export default function TimetableImportPage() {
           const cellValue = row[col];
           if (!cellValue) continue; // Skip empty cells
 
-          const [lecturePart, lecturerPart, lecturerIdPart] = cellValue.split("|").map((part) => part.trim());
-          const separator = lecturePart.indexOf("-");
-          if (separator < 1 || separator === lecturePart.length - 1) {
-            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: Cell "${cellValue}" does not match [Module Code]-[Room Code] format.`);
+          let identity;
+          try {
+            identity = parseTimetableCell(cellValue);
+          } catch (error) {
+            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: ${error instanceof Error ? error.message : "Invalid cell"}`);
             continue;
           }
-
-          const moduleCode = lecturePart.slice(0, separator).trim();
-          const roomCode = lecturePart.slice(separator + 1).trim();
-
-          if (!moduleCode || !roomCode) {
-            errors.push(`Row ${rowIndex + 2}, ${EXPECTED_HEADERS[col]}: Cell "${cellValue}" has an empty module or room code.`);
-            continue;
-          }
+          const { moduleCode, roomNumber, lecturerId } = identity;
 
           parsedRecords.push({
             semester,
             department,
             batch: batch.trim(),
-            lecturerName: lecturerPart || "Unassigned",
-            lecturerId: lecturerIdPart || "",
+            lecturerId,
             dayOfWeek: EXPECTED_HEADERS[col],
             startTime,
             endTime,
             moduleCode,
-            roomCode,
+            roomNumber,
           });
         }
       });
@@ -220,8 +213,8 @@ export default function TimetableImportPage() {
           <CardTitle>Timetable CSV Import</CardTitle>
           <CardDescription>
             Upload a weekly timetable matrix CSV. Columns must be: Time, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday.
-            Cells may contain [Module Code]-[Room Code]|[Lecturer]|[Lecturer ID] (e.g. CS6101-LH-101|Dr Silva|LEC001).
-            The lecturer part is optional and can differ for every cell.
+            Cells must contain module code/room ID/lecturer ID (e.g. CS6101/R-001/001). Use IDs from Rooms and Users; room and lecturer names are displayed automatically.
+            All three values are required for each occupied cell.
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -38,12 +38,7 @@ export function BookingRequestForm({
   submitLabel = "Book Room",
   onSubmit,
 }: BookingRequestFormProps) {
-  const buildings = useMemo(
-    () => Array.from(new Set(rooms.map((room) => room.building))).sort(),
-    [rooms],
-  );
   const initialRoom = rooms.find((room) => room.id === (initialValues?.roomId ?? defaultRoomId)) ?? rooms[0];
-  const [building, setBuilding] = useState(initialRoom?.building ?? buildings[0] ?? "");
   const [form, setForm] = useState<BookingInput>({
     roomId: initialValues?.roomId ?? initialRoom?.id ?? "",
     moduleName: initialValues?.moduleName ?? "",
@@ -59,10 +54,7 @@ export function BookingRequestForm({
   const minStartAt = useMemo(() => getMinBookingDateTimeInputValue(), []);
   const maxStartAt = useMemo(() => getMaxCampusDateTimeInputValue(), []);
 
-  const filteredRooms = useMemo(
-    () => rooms.filter((room) => room.building === building),
-    [rooms, building],
-  );
+  const filteredRooms = rooms;
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === form.roomId),
     [form.roomId, rooms],
@@ -149,17 +141,9 @@ export function BookingRequestForm({
       {/* Location Section */}
       <div className="space-y-3">
         <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500">
-          <Building2 className="h-4 w-4" /> Location
+          <Building2 className="h-4 w-4" /> Room
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Select
-            aria-label="Building"
-            name="building"
-            value={building}
-            onChange={(event) => setBuilding(event.target.value)}
-            options={buildings.map((item) => ({ value: item, label: item }))}
-            className="bg-slate-50"
-          />
+        <div className="grid grid-cols-1 gap-3">
           <Select
             aria-label="Room"
             name="roomId"
@@ -167,7 +151,7 @@ export function BookingRequestForm({
             onChange={(event) => setForm((previous) => ({ ...previous, roomId: event.target.value }))}
             options={filteredRooms.map((room) => ({
               value: room.id,
-              label: `${room.code} - ${room.name}`,
+              label: `${room.name}`,
             }))}
             className="bg-slate-50 font-medium"
           />

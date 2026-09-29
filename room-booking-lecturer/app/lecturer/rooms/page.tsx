@@ -36,7 +36,7 @@ export default function RoomsPage() {
     return rooms.filter((room) => {
       if (filter === "AVAILABLE" && room.status !== "AVAILABLE") return false;
       if (filter === "LARGE" && room.capacity < 100) return false;
-      return `${room.name} ${room.code} ${room.building}`.toLowerCase().includes(normalizedQuery);
+      return `${room.name} ${room.roomNumber} `.toLowerCase().includes(normalizedQuery);
     });
   }, [filter, query, rooms]);
 
@@ -48,7 +48,7 @@ export default function RoomsPage() {
         <div className="relative z-10 space-y-4">
           <div>
             <h2 className="text-xl font-bold tracking-tight">Find a Space</h2>
-            <p className="text-xs text-white/80 mt-1">Search through available rooms across all buildings.</p>
+            <p className="text-xs text-white/80 mt-1">Search through available rooms by name or room ID.</p>
           </div>
           
           <div className="relative">
@@ -58,7 +58,7 @@ export default function RoomsPage() {
             <input
               type="text"
               aria-label="Search rooms"
-              placeholder="Search by name, code, or building..."
+              placeholder="Search by name, room ID..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               className="h-11 w-full rounded-xl border-0 bg-white pl-10 pr-4 text-sm text-slate-900 shadow-inner placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-brand-accent/30"

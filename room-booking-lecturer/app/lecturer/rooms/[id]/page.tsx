@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Building2, Users, Layers, CalendarDays, CheckCircle2, ChevronLeft, MonitorPlay, Wifi, Video } from "lucide-react";
+import { Layers, Users, CalendarDays, CheckCircle2, ChevronLeft, MonitorPlay, Wifi, Video } from "lucide-react";
 
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatusBadge } from "@/components/common/StatusBadge";
@@ -82,7 +82,7 @@ export default function RoomDetailsPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-bold uppercase tracking-widest text-brand-primary">{room.code}</span>
+                <span className="text-xs font-bold uppercase tracking-widest text-brand-primary">{ROOM_TYPE_LABELS[room.type]}</span>
                 <span className="h-1 w-1 rounded-full bg-slate-300" />
                 <span className="text-xs font-semibold text-slate-500">{ROOM_TYPE_LABELS[room.type]}</span>
               </div>
@@ -95,17 +95,7 @@ export default function RoomDetailsPage() {
         </div>
 
         {/* Quick Stats Banner */}
-        <div className="grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 bg-slate-50">
-          <div className="flex flex-col items-center justify-center p-3 text-center">
-            <Building2 className="mb-1 h-4 w-4 text-slate-400" />
-            <span className="text-xs font-bold text-slate-900">{room.building}</span>
-            <span className="text-[10px] uppercase tracking-wider text-slate-500">Bldg</span>
-          </div>
-          <div className="flex flex-col items-center justify-center p-3 text-center">
-            <Layers className="mb-1 h-4 w-4 text-slate-400" />
-            <span className="text-xs font-bold text-slate-900">Floor {room.floor}</span>
-            <span className="text-[10px] uppercase tracking-wider text-slate-500">Level</span>
-          </div>
+        <div className="grid grid-cols-1 divide-x divide-slate-100 border-t border-slate-100 bg-slate-50">
           <div className="flex flex-col items-center justify-center p-3 text-center">
             <Users className="mb-1 h-4 w-4 text-slate-400" />
             <span className="text-xs font-bold text-slate-900">{room.capacity}</span>
