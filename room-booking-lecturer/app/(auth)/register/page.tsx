@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, Building2, IdCard, Mail, Send, User, UserRoundCog } from "lucide-react";
+import { ArrowLeft, Building2, Mail, Send, User, UserRoundCog } from "lucide-react";
 
 import { useToast } from "@/components/common/ToastProvider";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ export default function RegisterPage() {
     department: "",
     position: "",
     gmail: "",
-    idNumber: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const router = useRouter();
@@ -31,8 +30,8 @@ export default function RegisterPage() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await submitAccountRequest(form);
-      showToast("Request sent", "Admin will review your lecturer account request.", "success");
+      const request = await submitAccountRequest(form);
+      showToast("Request sent", `Your lecturer ID is ${request.idNumber}. Admin will review your request.`, "success");
       router.push("/login");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to submit account request.";
@@ -101,15 +100,7 @@ export default function RegisterPage() {
             />
           </Field>
 
-          <Field icon={<IdCard className="h-5 w-5" />} label="ID number">
-            <Input
-              value={form.idNumber}
-              onChange={(event) => update("idNumber", event.target.value)}
-              placeholder="EMP-001"
-              maxLength={80}
-              required
-            />
-          </Field>
+          <p className="text-sm text-slate-600">Your unique lecturer ID is assigned automatically.</p>
 
           <Button type="submit" className="h-14 w-full rounded-2xl text-base" disabled={submitting}>
             {submitting ? "Sending request..." : "Send to admin"}

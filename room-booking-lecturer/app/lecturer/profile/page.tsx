@@ -90,7 +90,7 @@ export default function ProfilePage() {
             <InfoRow icon={<Mail className="h-5 w-5" />} label="Gmail / Username" value={identifier} />
             <InfoRow icon={<Building className="h-5 w-5" />} label="Department" value={department} />
             <InfoRow icon={<UserRoundCog className="h-5 w-5" />} label="Position" value={position} />
-            <InfoRow icon={<IdCard className="h-5 w-5" />} label="ID Number" value={idNumber} />
+            <InfoRow icon={<IdCard className="h-5 w-5" />} label="Lecturer ID" value={idNumber} />
           </div>
         </Card>
       </div>

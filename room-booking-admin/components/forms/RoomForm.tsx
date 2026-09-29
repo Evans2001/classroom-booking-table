@@ -16,10 +16,7 @@ interface RoomFormProps {
 }
 
 const defaultValues: CreateRoomInput = {
-  code: "",
   name: "",
-  building: "",
-  floor: 1,
   capacity: 1,
   type: "LECTURE_HALL",
   hasProjector: false,
@@ -38,7 +35,18 @@ export function RoomForm({ initialValues, submitLabel = "Save Room", onSubmit }:
     event.preventDefault();
     setSubmitting(true);
     try {
-      await onSubmit(values);
+      if (initialValues) {
+        await onSubmit(values);
+      } else {
+        await onSubmit({
+          name: values.name,
+          capacity: values.capacity,
+          type: values.type,
+          status: values.status,
+          hasProjector: values.hasProjector,
+          hasAc: values.hasAc,
+        });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -51,42 +59,12 @@ export function RoomForm({ initialValues, submitLabel = "Save Room", onSubmit }:
   return (
     <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
       <div className="space-y-1">
-        <Label htmlFor="code">Room Code</Label>
-        <Input
-          id="code"
-          value={values.code}
-          onChange={(event) => setField("code", event.target.value)}
-          placeholder="LH-101"
-          required
-        />
-      </div>
-      <div className="space-y-1">
         <Label htmlFor="name">Room Name</Label>
         <Input
           id="name"
           value={values.name}
           onChange={(event) => setField("name", event.target.value)}
           placeholder="Main Lecture Hall"
-          required
-        />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="building">Building</Label>
-        <Input
-          id="building"
-          value={values.building}
-          onChange={(event) => setField("building", event.target.value)}
-          required
-        />
-      </div>
-      <div className="space-y-1">
-        <Label htmlFor="floor">Floor</Label>
-        <Input
-          id="floor"
-          type="number"
-          min={0}
-          value={values.floor}
-          onChange={(event) => setField("floor", Number(event.target.value))}
           required
         />
       </div>

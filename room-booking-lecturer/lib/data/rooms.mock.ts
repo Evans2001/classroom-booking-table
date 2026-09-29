@@ -3,10 +3,8 @@ import type { Room } from "@/lib/types/room";
 export const roomsMock: Room[] = [
   {
     id: "room-1",
-    code: "LH-101",
+    roomNumber: "R-001",
     name: "Main Lecture Hall",
-    building: "Engineering Block",
-    floor: 1,
     capacity: 160,
     type: "LECTURE_HALL",
     status: "AVAILABLE",
@@ -15,10 +13,8 @@ export const roomsMock: Room[] = [
   },
   {
     id: "room-2",
-    code: "LAB-204",
+    roomNumber: "R-002",
     name: "Computer Lab A",
-    building: "Science Complex",
-    floor: 2,
     capacity: 45,
     type: "LAB",
     status: "LIMITED",
@@ -27,10 +23,8 @@ export const roomsMock: Room[] = [
   },
   {
     id: "room-3",
-    code: "MR-305",
+    roomNumber: "R-003",
     name: "Board Meeting Room",
-    building: "Admin Building",
-    floor: 3,
     capacity: 20,
     type: "MEETING_ROOM",
     status: "AVAILABLE",
@@ -39,10 +33,8 @@ export const roomsMock: Room[] = [
   },
   {
     id: "room-4",
-    code: "LH-202",
+    roomNumber: "R-004",
     name: "South Lecture Hall",
-    building: "Engineering Block",
-    floor: 2,
     capacity: 120,
     type: "LECTURE_HALL",
     status: "UNAVAILABLE",

@@ -3,10 +3,8 @@ export type RoomType = "LECTURE_HALL" | "LAB" | "MEETING_ROOM";
 
 export interface Room {
   id: string;
-  code: string;
+  roomNumber: string;
   name: string;
-  building: string;
-  floor: number;
   capacity: number;
   type: RoomType;
   status: RoomStatus;
