@@ -60,3 +60,25 @@ ROOM_BOOKING_DB_PATH=/var/lib/room-booking/room-booking.sqlite
 ```
 
 Do not commit `.env.local`, database files, SMTP secrets, signing keys, or production credentials.
+
+## Permanent room IDs
+
+All existing and newly created rooms receive a server-generated `roomNumber`, starting at `R-001`. This ID is shown in room lists, details, and lecturer room selectors. Room IDs identify rooms throughout the apps and timetable imports. Existing booking links remain intact. The persistent sequence never renumbers rooms or reuses an issued ID after deletion. Numbers continue past `R-999` as `R-1000`.
+
+## Timetable CSV identity format
+
+Keep the `Time,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday` headers. Each occupied cell must use `module code/room ID/lecturer ID`, for example `CS6101/R-001/001`. Copy assigned IDs from the Rooms and Users pages. Unknown IDs are rejected. Names are resolved from the room and lecturer records for display, and renaming either record does not change the association. Run `node scripts/generate-department-timetables.mjs` to generate samples using currently assigned IDs in the local database.
+
+## Verification and local production build
+
+Run `npm run check` for lint, TypeScript, and tests. To verify an optimized build separately from the running development server in PowerShell:
+
+```powershell
+$env:NEXT_DIST_DIR = '.next-production'
+npm run build
+npm run start -- --hostname 127.0.0.1 --port 3001
+```
+
+Use the same `NEXT_DIST_DIR` value for build and start. Production authentication requires `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET`; development fallback credentials are intentionally unavailable in production. Local development remains on port 3000.
+
+Calendar refresh uses one authenticated, month-scoped snapshot request instead of four requests. ETags suppress unchanged response bodies, and hidden tabs pause polling. SQLite setup and migrations run once per connection; indexed booking/issue queries and WAL improve repeated reads and concurrent access. Back up a live SQLite database using SQLite's backup API rather than copying only the main file while WAL is active.

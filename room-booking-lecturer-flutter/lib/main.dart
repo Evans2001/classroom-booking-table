@@ -189,10 +189,8 @@ enum IssueStatus { open, inProgress, resolved, closed }
 class Room {
   const Room({
     required this.id,
-    required this.code,
+    this.roomNumber = '',
     required this.name,
-    required this.building,
-    required this.floor,
     required this.capacity,
     required this.type,
     required this.status,
@@ -201,10 +199,8 @@ class Room {
   });
 
   final String id;
-  final String code;
+  final String roomNumber;
   final String name;
-  final String building;
-  final int floor;
   final int capacity;
   final RoomType type;
   final RoomStatus status;
@@ -217,8 +213,7 @@ class Booking {
     required this.id,
     required this.roomId,
     required this.roomName,
-    required this.building,
-    required this.roomCode,
+    required this.roomNumber,
     required this.moduleName,
     required this.startAt,
     required this.endAt,
@@ -232,8 +227,7 @@ class Booking {
   final String id;
   final String roomId;
   final String roomName;
-  final String building;
-  final String roomCode;
+  final String roomNumber;
   final String moduleName;
   final DateTime startAt;
   final DateTime endAt;
@@ -282,12 +276,16 @@ class IssueUpdate {
 
 const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
 const _apiTimeout = Duration(seconds: 15);
-final _apiClient = HttpClient()..connectionTimeout = _apiTimeout;
+final _apiClient = HttpClient()
+  ..connectionTimeout = _apiTimeout
+  ..idleTimeout = const Duration(seconds: 30)
+  ..maxConnectionsPerHost = 4;
 
 class ApiException implements Exception {
-  const ApiException(this.message);
+  const ApiException(this.message, {this.statusCode});
 
   final String message;
+  final int? statusCode;
 
   @override
   String toString() => message;
@@ -322,10 +320,12 @@ Future<dynamic> apiRequest(
   Map<String, dynamic>? body,
   String? sessionTokenOverride,
 }) async {
+  HttpClientRequest? pendingRequest;
   try {
     final request = await _apiClient
         .openUrl(method, Uri.parse('$apiBaseUrl$path'))
         .timeout(_apiTimeout);
+    pendingRequest = request;
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
     final authorizationToken =
         sessionTokenOverride ?? currentLecturerSessionToken;
@@ -362,12 +362,14 @@ Future<dynamic> apiRequest(
         serverMessage is String && serverMessage.trim().isNotEmpty
             ? serverMessage
             : 'The request could not be completed. Please try again.',
+        statusCode: response.statusCode,
       );
     }
     return decoded;
   } on ApiException {
     rethrow;
   } on TimeoutException {
+    pendingRequest?.abort();
     throw const ApiException(
       'The server took too long to respond. Please try again.',
     );
@@ -447,10 +449,8 @@ Map<String, dynamic> bookingInputToApi({
 
 Room roomFromApi(Map<String, dynamic> json) => Room(
   id: json['id'] as String,
-  code: json['code'] as String,
+  roomNumber: json['roomNumber'] as String? ?? '',
   name: json['name'] as String,
-  building: json['building'] as String,
-  floor: json['floor'] as int,
   capacity: json['capacity'] as int,
   type: roomTypeFromApi(json['type'] as String),
   status: roomStatusFromApi(json['status'] as String),
@@ -462,8 +462,7 @@ Booking bookingFromApi(Map<String, dynamic> json) => Booking(
   id: json['id'] as String,
   roomId: json['roomId'] as String,
   roomName: json['roomName'] as String,
-  building: json['building'] as String,
-  roomCode: json['roomCode'] as String,
+  roomNumber: json['roomNumber'] as String,
   moduleName: json['moduleName'] as String,
   startAt: campusLocalFromApi(json['startLocal'], json['startAt']),
   endAt: campusLocalFromApi(json['endLocal'], json['endAt']),
@@ -534,14 +533,13 @@ Future<void> loadSharedData() async {
     ..addAll(nextIssues);
 }
 
-Future<void> submitLecturerAccountRequest({
+Future<String> submitLecturerAccountRequest({
   required String name,
   required String department,
   required String position,
   required String gmail,
-  required String idNumber,
 }) async {
-  await apiRequest(
+  final response = await apiRequest(
     '/api/lecturer/account-requests',
     method: 'POST',
     body: {
@@ -549,9 +547,9 @@ Future<void> submitLecturerAccountRequest({
       'department': department,
       'position': position,
       'gmail': gmail,
-      'idNumber': idNumber,
     },
   );
+  return response['idNumber'] as String;
 }
 
 Future<Map<String, dynamic>> loginLecturerAccount({
@@ -664,6 +662,7 @@ Future<void> finishRemoteLogout(
 }
 
 String currentLecturerIdentifier = '';
+String currentLecturerId = '';
 String currentLecturerName = 'Lecturer';
 String currentLecturerDepartment = '';
 String currentLecturerSessionToken = '';
@@ -671,10 +670,8 @@ String currentLecturerSessionToken = '';
 final rooms = <Room>[
   const Room(
     id: 'room-1',
-    code: 'LH-101',
+    roomNumber: 'R-001',
     name: 'Main Lecture Hall',
-    building: 'Engineering Block',
-    floor: 1,
     capacity: 160,
     type: RoomType.lectureHall,
     status: RoomStatus.available,
@@ -683,10 +680,8 @@ final rooms = <Room>[
   ),
   const Room(
     id: 'room-2',
-    code: 'LAB-204',
+    roomNumber: 'R-002',
     name: 'Computer Lab A',
-    building: 'Science Complex',
-    floor: 2,
     capacity: 45,
     type: RoomType.lab,
     status: RoomStatus.limited,
@@ -695,10 +690,8 @@ final rooms = <Room>[
   ),
   const Room(
     id: 'room-3',
-    code: 'MR-305',
+    roomNumber: 'R-003',
     name: 'Board Meeting Room',
-    building: 'Admin Building',
-    floor: 3,
     capacity: 20,
     type: RoomType.meetingRoom,
     status: RoomStatus.available,
@@ -707,10 +700,8 @@ final rooms = <Room>[
   ),
   const Room(
     id: 'room-4',
-    code: 'LH-202',
+    roomNumber: 'R-004',
     name: 'South Lecture Hall',
-    building: 'Engineering Block',
-    floor: 2,
     capacity: 120,
     type: RoomType.lectureHall,
     status: RoomStatus.unavailable,
@@ -758,6 +749,7 @@ class _LoginScreenState extends State<LoginScreen> {
         password: password,
       );
       currentLecturerIdentifier = account['gmail'] as String? ?? email;
+      currentLecturerId = account['idNumber'] as String? ?? '';
       currentLecturerName = account['name'] as String? ?? 'Lecturer';
       currentLecturerDepartment =
           account['department'] as String? ?? 'Faculty Department';
@@ -995,7 +987,6 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
   final departmentController = TextEditingController();
   final positionController = TextEditingController();
   final gmailController = TextEditingController();
-  final idNumberController = TextEditingController();
   bool submitting = false;
 
   @override
@@ -1004,7 +995,6 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
     departmentController.dispose();
     positionController.dispose();
     gmailController.dispose();
-    idNumberController.dispose();
     super.dispose();
   }
 
@@ -1013,16 +1003,19 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
     if (!(formKey.currentState?.validate() ?? false)) return;
     setState(() => submitting = true);
     try {
-      await submitLecturerAccountRequest(
+      final lecturerId = await submitLecturerAccountRequest(
         name: nameController.text.trim(),
         department: departmentController.text.trim(),
         position: positionController.text.trim(),
         gmail: gmailController.text.trim(),
-        idNumber: idNumberController.text.trim(),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account request sent to admin.')),
+        SnackBar(
+          content: Text(
+            'Your lecturer ID is $lecturerId. Account request sent to admin.',
+          ),
+        ),
       );
       Navigator.of(context).pop();
     } catch (error) {
@@ -1121,18 +1114,7 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: idNumberController,
-                validator: requiredField,
-                textInputAction: TextInputAction.done,
-                inputFormatters: [LengthLimitingTextInputFormatter(80)],
-                enabled: !submitting,
-                onFieldSubmitted: (_) => submit(),
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.badge_outlined),
-                  labelText: 'ID number',
-                ),
-              ),
+              const Text('Your unique lecturer ID is assigned automatically.'),
               const SizedBox(height: 18),
               SizedBox(
                 height: 54,
@@ -1157,13 +1139,16 @@ class LecturerHome extends StatefulWidget {
   State<LecturerHome> createState() => _LecturerHomeState();
 }
 
-class _LecturerHomeState extends State<LecturerHome> {
+class _LecturerHomeState extends State<LecturerHome>
+    with WidgetsBindingObserver {
   int index = 0;
   bool refreshing = false;
   bool loggingOut = false;
   Future<void>? refreshOperation;
+  DateTime? lastRefresh;
+  StreamSubscription<RemoteMessage>? bookingUpdates;
 
-  final pages = const [
+  List<Widget> get pages => [
     DashboardScreen(),
     RoomsScreen(),
     CalendarScreen(),
@@ -1182,7 +1167,27 @@ class _LecturerHomeState extends State<LecturerHome> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    bookingUpdates = FirebaseMessaging.onMessage.listen((_) => refreshData());
     refreshData();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    bookingUpdates?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        !loggingOut &&
+        (lastRefresh == null ||
+            DateTime.now().difference(lastRefresh!) >
+                const Duration(seconds: 30))) {
+      unawaited(refreshData());
+    }
   }
 
   Future<void> refreshData() async {
@@ -1205,10 +1210,31 @@ class _LecturerHomeState extends State<LecturerHome> {
     }
     try {
       await loadSharedData();
+      lastRefresh = DateTime.now();
       if (mounted) {
         setState(() {});
       }
     } catch (error) {
+      if (error is ApiException && error.statusCode == 401 && mounted) {
+        currentLecturerSessionToken = '';
+        currentLecturerIdentifier = '';
+        currentLecturerId = '';
+        currentLecturerName = 'Lecturer';
+        currentLecturerDepartment = '';
+        rooms.clear();
+        bookings.clear();
+        issues.clear();
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+        );
+        scaffoldMessengerKey.currentState?.showSnackBar(
+          const SnackBar(
+            content: Text('Your session expired. Please sign in again.'),
+          ),
+        );
+        return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1255,6 +1281,7 @@ class _LecturerHomeState extends State<LecturerHome> {
     final pushToken = registeredPushToken;
     setState(() => loggingOut = true);
     currentLecturerIdentifier = '';
+    currentLecturerId = '';
     currentLecturerName = 'Lecturer';
     currentLecturerDepartment = '';
     currentLecturerSessionToken = '';
@@ -1346,6 +1373,8 @@ class _LecturerHomeState extends State<LecturerHome> {
     Room? room,
     Booking? booking,
     DateTime? initialDate,
+    DateTime? initialStart,
+    DateTime? initialEnd,
   }) async {
     await Navigator.of(context).push(
       MaterialPageRoute(
@@ -1353,6 +1382,8 @@ class _LecturerHomeState extends State<LecturerHome> {
           defaultRoom: room,
           booking: booking,
           initialDate: initialDate,
+          initialStart: initialStart,
+          initialEnd: initialEnd,
         ),
       ),
     );
@@ -1365,7 +1396,7 @@ class _LecturerHomeState extends State<LecturerHome> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Cancel booking?'),
         content: Text(
-          'This will cancel the ${booking.roomCode} request for ${booking.moduleName} and retain it in your history.',
+          'This will cancel the ${booking.roomName} request for ${booking.moduleName} and retain it in your history.',
         ),
         actions: [
           TextButton(
@@ -1511,12 +1542,13 @@ class _RoomsScreenState extends State<RoomsScreen> {
   @override
   Widget build(BuildContext context) {
     final filtered = rooms.where((room) {
-      final haystack = '${room.name} ${room.code} ${room.building}'
-          .toLowerCase();
+      final haystack = '${room.name} ${room.roomNumber}'.toLowerCase();
       return haystack.contains(query.toLowerCase());
     }).toList();
 
     return AppScrollView(
+      itemCount: filtered.length,
+      itemBuilder: (context, index) => RoomTile(room: filtered[index]),
       children: [
         Container(
           padding: const EdgeInsets.all(18),
@@ -1537,7 +1569,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Search rooms across all buildings.',
+                'Search rooms by name or room ID.',
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
               ),
               const SizedBox(height: 14),
@@ -1545,7 +1577,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
                 onChanged: (value) => setState(() => query = value),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search),
-                  hintText: 'Search by name, code, or building',
+                  hintText: 'Search by name or room ID',
                 ),
               ),
             ],
@@ -1557,16 +1589,21 @@ class _RoomsScreenState extends State<RoomsScreen> {
             icon: Icons.search_off,
             title: 'No rooms found',
             subtitle: 'Try a different search term.',
-          )
-        else
-          ...filtered.map((room) => RoomTile(room: room)),
+          ),
       ],
     );
   }
 }
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  const CalendarScreen({
+    this.calendarLoader,
+    this.availabilityLoader,
+    super.key,
+  });
+  final Future<Map<String, dynamic>> Function(String month)? calendarLoader;
+  final Future<List<Room>> Function(DateTime start, DateTime end)?
+  availabilityLoader;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -1575,12 +1612,206 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   late DateTime visibleMonth;
   DateTime? selectedDate;
+  List<Map<String, dynamic>> semesterEntries = [];
+  List<Map<String, dynamic>> sharedBookings = [];
+  List<Room>? freeRooms;
+  String? scheduleError;
+  String? availabilityError;
+  bool loadingSchedule = false;
+  bool checkingAvailability = false;
+  TimeOfDay slotStart = const TimeOfDay(hour: 9, minute: 0);
+  TimeOfDay slotEnd = const TimeOfDay(hour: 10, minute: 0);
+  Timer? refreshTimer;
+  int scheduleVersion = 0;
+  int availabilityVersion = 0;
+  static const days = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
 
   @override
   void initState() {
     super.initState();
     final now = campusNow();
     visibleMonth = DateTime(now.year, now.month);
+    unawaited(loadSchedule());
+    if (currentLecturerSessionToken.isNotEmpty) {
+      refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (WidgetsBinding.instance.lifecycleState ==
+            AppLifecycleState.resumed) {
+          unawaited(loadSchedule());
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    refreshTimer?.cancel();
+    scheduleVersion++;
+    availabilityVersion++;
+    super.dispose();
+  }
+
+  Future<void> loadSchedule() async {
+    if (widget.calendarLoader == null && currentLecturerSessionToken.isEmpty) {
+      return;
+    }
+    final version = ++scheduleVersion;
+    final token = currentLecturerSessionToken;
+    setState(() => loadingSchedule = true);
+    try {
+      final month =
+          '${visibleMonth.year}-${visibleMonth.month.toString().padLeft(2, '0')}';
+      final data = widget.calendarLoader != null
+          ? await widget.calendarLoader!(month)
+          : await apiRequest('/api/lecturer/calendar?month=$month')
+                as Map<String, dynamic>;
+      if (!mounted ||
+          version != scheduleVersion ||
+          token != currentLecturerSessionToken) {
+        return;
+      }
+      setState(() {
+        semesterEntries = (data['entries'] as List)
+            .map((entry) => Map<String, dynamic>.from(entry as Map))
+            .toList();
+        sharedBookings = (data['bookings'] as List)
+            .map((entry) => Map<String, dynamic>.from(entry as Map))
+            .toList();
+        scheduleError = null;
+        freeRooms = null;
+      });
+    } catch (error) {
+      if (mounted && version == scheduleVersion) {
+        setState(() => scheduleError = userFacingError(error));
+      }
+    } finally {
+      if (mounted && version == scheduleVersion) {
+        setState(() => loadingSchedule = false);
+      }
+    }
+  }
+
+  void changeMonth(int offset) {
+    setState(() {
+      visibleMonth = DateTime(visibleMonth.year, visibleMonth.month + offset);
+      selectedDate = null;
+      freeRooms = null;
+      availabilityVersion++;
+      semesterEntries = [];
+      sharedBookings = [];
+    });
+    unawaited(loadSchedule());
+  }
+
+  Future<void> chooseTime(bool start) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: start ? slotStart : slotEnd,
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        if (start) {
+          slotStart = picked;
+        } else {
+          slotEnd = picked;
+        }
+        freeRooms = null;
+        availabilityVersion++;
+        checkingAvailability = false;
+      });
+    }
+  }
+
+  DateTime atTime(TimeOfDay time) => DateTime(
+    selectedDate!.year,
+    selectedDate!.month,
+    selectedDate!.day,
+    time.hour,
+    time.minute,
+  );
+
+  Future<void> findFreeRooms() async {
+    if (selectedDate == null) return;
+    final start = atTime(slotStart), end = atTime(slotEnd);
+    if (!end.isAfter(start) || !start.isAfter(campusNow())) {
+      setState(() {
+        availabilityError = 'Choose a future start time and a later end time.';
+        freeRooms = null;
+      });
+      return;
+    }
+    final version = ++availabilityVersion;
+    setState(() {
+      checkingAvailability = true;
+      availabilityError = null;
+      freeRooms = null;
+    });
+    try {
+      final found = widget.availabilityLoader != null
+          ? await widget.availabilityLoader!(start, end)
+          : (await apiRequest(
+                      '/api/lecturer/rooms/available',
+                      method: 'POST',
+                      body: {
+                        'startLocal': campusLocalToApi(start),
+                        'endLocal': campusLocalToApi(end),
+                      },
+                    )
+                    as List)
+                .map(
+                  (item) => roomFromApi(Map<String, dynamic>.from(item as Map)),
+                )
+                .toList();
+      if (mounted && version == availabilityVersion) {
+        setState(() => freeRooms = found);
+      }
+    } catch (error) {
+      if (mounted && version == availabilityVersion) {
+        setState(() => availabilityError = userFacingError(error));
+      }
+    } finally {
+      if (mounted && version == availabilityVersion) {
+        setState(() => checkingAvailability = false);
+      }
+    }
+  }
+
+  Widget scheduleCard(Map<String, dynamic> entry, {bool booking = false}) {
+    final pending = entry['status'] == 'PENDING';
+    return CardPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          StatusPill(
+            label: booking
+                ? (pending
+                      ? 'Room booking - Pending'
+                      : 'Room booking - Approved')
+                : 'Semester lecture',
+            color: booking
+                ? (pending ? Colors.orange : Colors.green)
+                : brandPrimary,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${entry['startTime']} - ${entry['endTime']}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Text('${entry['roomName']} - ${entry['lecturerName']}'),
+          if (!booking)
+            Text(
+              '${entry['moduleCode']} - ${entry['batch']} - ${entry['semester']}',
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -1590,16 +1821,43 @@ class _CalendarScreenState extends State<CalendarScreen> {
             .where(
               (booking) =>
                   selectedDate != null &&
+                  isActiveBooking(booking) &&
                   isSameDay(booking.startAt, selectedDate!),
             )
             .toList()
           ..sort((a, b) => a.startAt.compareTo(b.startAt));
 
+    final lectures =
+        selectedDate == null
+              ? <Map<String, dynamic>>[]
+              : semesterEntries
+                    .where(
+                      (entry) =>
+                          entry['dayOfWeek'] == days[selectedDate!.weekday - 1],
+                    )
+                    .toList()
+          ..sort(
+            (a, b) =>
+                (a['startTime'] as String).compareTo(b['startTime'] as String),
+          );
+    final datedBookings = selectedDate == null
+        ? <Map<String, dynamic>>[]
+        : sharedBookings
+              .where(
+                (entry) =>
+                    entry['date'] ==
+                        campusLocalToApi(selectedDate!).split('T').first &&
+                    !selectedBookings.any(
+                      (booking) => booking.id == entry['id'],
+                    ),
+              )
+              .toList();
     return AppScrollView(
       children: [
         const HeroPanel(
-          title: 'Teaching Calendar',
-          subtitle: 'Select a date to view, create, or manage your bookings.',
+          title: 'Semester Calendar',
+          subtitle:
+              'View semester lectures and room bookings, then check a free time to book.',
         ),
         CardPanel(
           child: Column(
@@ -1608,12 +1866,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 children: [
                   IconButton(
                     tooltip: 'Previous month',
-                    onPressed: () => setState(() {
-                      visibleMonth = DateTime(
-                        visibleMonth.year,
-                        visibleMonth.month - 1,
-                      );
-                    }),
+                    onPressed: () => changeMonth(-1),
                     icon: const Icon(Icons.chevron_left),
                   ),
                   Expanded(
@@ -1628,12 +1881,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   ),
                   IconButton(
                     tooltip: 'Next month',
-                    onPressed: () => setState(() {
-                      visibleMonth = DateTime(
-                        visibleMonth.year,
-                        visibleMonth.month + 1,
-                      );
-                    }),
+                    onPressed: () => changeMonth(1),
                     icon: const Icon(Icons.chevron_right),
                   ),
                 ],
@@ -1653,12 +1901,34 @@ class _CalendarScreenState extends State<CalendarScreen> {
               const SizedBox(height: 8),
               CalendarMonthGrid(
                 month: visibleMonth,
+                hasScheduledEvents: (date) =>
+                    semesterEntries.any(
+                      (entry) => entry['dayOfWeek'] == days[date.weekday - 1],
+                    ) ||
+                    sharedBookings.any(
+                      (entry) =>
+                          entry['date'] ==
+                          campusLocalToApi(date).split('T').first,
+                    ),
                 selectedDate: selectedDate,
-                onDateSelected: (date) => setState(() => selectedDate = date),
+                onDateSelected: (date) => setState(() {
+                  selectedDate = date;
+                  freeRooms = null;
+                  availabilityError = null;
+                  availabilityVersion++;
+                  checkingAvailability = false;
+                }),
               ),
             ],
           ),
         ),
+        if (loadingSchedule) const LinearProgressIndicator(),
+        if (scheduleError != null)
+          TextButton.icon(
+            onPressed: loadSchedule,
+            icon: const Icon(Icons.refresh),
+            label: Text(scheduleError!),
+          ),
         if (selectedDate == null)
           const EmptyPanel(
             icon: Icons.touch_app_outlined,
@@ -1667,6 +1937,84 @@ class _CalendarScreenState extends State<CalendarScreen> {
                 'Your bookings and the Book a room button will appear here.',
           )
         else ...[
+          SectionTitle('Semester timetable on ${dateLabel(selectedDate!)}'),
+          if (lectures.isEmpty && !loadingSchedule && scheduleError == null)
+            const Text('No semester lectures scheduled for this day.'),
+          ...lectures.map((entry) => scheduleCard(entry)),
+          ...datedBookings.map((entry) => scheduleCard(entry, booking: true)),
+          if (!selectedDate!.isBefore(DateUtils.dateOnly(campusNow())))
+            CardPanel(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Find an available room',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => chooseTime(true),
+                          child: Text('Start: ${slotStart.format(context)}'),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => chooseTime(false),
+                          child: Text('End: ${slotEnd.format(context)}'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  FilledButton(
+                    onPressed: checkingAvailability ? null : findFreeRooms,
+                    child: Text(
+                      checkingAvailability
+                          ? 'Checking...'
+                          : 'Check available rooms',
+                    ),
+                  ),
+                  if (availabilityError != null)
+                    Text(
+                      availabilityError!,
+                      style: const TextStyle(color: Colors.red),
+                    ),
+                  if (freeRooms != null && freeRooms!.isEmpty)
+                    const Text(
+                      'No rooms are free for this time. Choose another time.',
+                    ),
+                  if (freeRooms != null)
+                    ...freeRooms!.map(
+                      (room) => ListTile(
+                        title: Text(room.name),
+                        subtitle: Text('${room.capacity} seats'),
+                        trailing: TextButton(
+                          onPressed: () async {
+                            final home = context
+                                .findAncestorStateOfType<_LecturerHomeState>();
+                            if (home != null) {
+                              await home.openBookingForm(
+                                context,
+                                room: room,
+                                initialDate: selectedDate,
+                                initialStart: atTime(slotStart),
+                                initialEnd: atTime(slotEnd),
+                              );
+                              if (mounted) await loadSchedule();
+                            }
+                          },
+                          child: const Text('Book'),
+                        ),
+                      ),
+                    ),
+                  const Text(
+                    'Availability is checked against all lecturers and bookings. It is checked again when you submit.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
           SectionTitle('Bookings on ${dateLabel(selectedDate!)}'),
           if (!selectedDate!.isBefore(DateUtils.dateOnly(campusNow())))
             FilledButton.icon(
@@ -1819,6 +2167,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         InfoRow(
+          icon: Icons.badge_outlined,
+          label: 'Lecturer ID',
+          value: currentLecturerId,
+        ),
+        InfoRow(
           icon: Icons.mail_outline,
           label: 'Gmail / Username',
           value: currentLecturerIdentifier,
@@ -1913,10 +2266,7 @@ class RoomDetailsScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Room Details')),
       body: AppScrollView(
         children: [
-          HeroPanel(
-            title: room.name,
-            subtitle: '${room.code} - ${room.building}',
-          ),
+          HeroPanel(title: room.name, subtitle: roomTypeLabel(room.type)),
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -1924,10 +2274,6 @@ class RoomDetailsScreen extends StatelessWidget {
               DetailChip(
                 icon: Icons.groups_outlined,
                 label: '${room.capacity} seats',
-              ),
-              DetailChip(
-                icon: Icons.layers_outlined,
-                label: 'Floor ${room.floor}',
               ),
               DetailChip(
                 icon: Icons.category_outlined,
@@ -1990,12 +2336,16 @@ class BookingFormScreen extends StatefulWidget {
     this.defaultRoom,
     this.booking,
     this.initialDate,
+    this.initialStart,
+    this.initialEnd,
     super.key,
   });
 
   final Room? defaultRoom;
   final Booking? booking;
   final DateTime? initialDate;
+  final DateTime? initialStart;
+  final DateTime? initialEnd;
 
   @override
   State<BookingFormScreen> createState() => _BookingFormScreenState();
@@ -2037,6 +2387,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     final requestedDate = widget.initialDate;
     final initialStart =
         widget.booking?.startAt ??
+        widget.initialStart ??
         (requestedDate == null || isSameDay(requestedDate, earliestStart)
             ? earliestStart
             : DateTime(
@@ -2046,7 +2397,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                 9,
               ));
     final initialEnd =
-        widget.booking?.endAt ?? initialStart.add(const Duration(hours: 1));
+        widget.booking?.endAt ??
+        widget.initialEnd ??
+        initialStart.add(const Duration(hours: 1));
     selectedDate = DateUtils.dateOnly(initialStart);
     startTime = TimeOfDay.fromDateTime(initialStart);
     endTime = TimeOfDay.fromDateTime(initialEnd);
@@ -2225,7 +2578,7 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
                           (room) => DropdownMenuItem(
                             value: room,
                             child: Text(
-                              '${room.code} - ${room.name}',
+                              room.name,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -2480,7 +2833,7 @@ class _IssueFormScreenState extends State<IssueFormScreen> {
                           (room) => DropdownMenuItem(
                             value: room,
                             child: Text(
-                              '${room.code} - ${room.name}',
+                              room.name,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -2641,7 +2994,7 @@ class RoomTile extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${room.code} - ${room.building}',
+                      roomTypeLabel(room.type),
                       style: const TextStyle(color: Color(0xFF64748B)),
                     ),
                   ],
@@ -2658,10 +3011,6 @@ class RoomTile extends StatelessWidget {
               DetailChip(
                 icon: Icons.groups_outlined,
                 label: '${room.capacity} seats',
-              ),
-              DetailChip(
-                icon: Icons.layers_outlined,
-                label: 'Floor ${room.floor}',
               ),
               StatusPill(
                 label: roomStatusLabel(room.status),
@@ -2701,12 +3050,14 @@ class CalendarMonthGrid extends StatelessWidget {
     required this.month,
     required this.selectedDate,
     required this.onDateSelected,
+    this.hasScheduledEvents,
     super.key,
   });
 
   final DateTime month;
   final DateTime? selectedDate;
   final ValueChanged<DateTime> onDateSelected;
+  final bool Function(DateTime)? hasScheduledEvents;
 
   @override
   Widget build(BuildContext context) {
@@ -2729,6 +3080,7 @@ class CalendarMonthGrid extends StatelessWidget {
                     month: month,
                     selectedDate: selectedDate,
                     onDateSelected: onDateSelected,
+                    hasScheduledEvents: hasScheduledEvents,
                   ),
                 ),
             ],
@@ -2745,6 +3097,7 @@ class _CalendarDayCell extends StatelessWidget {
     required this.month,
     required this.selectedDate,
     required this.onDateSelected,
+    this.hasScheduledEvents,
   });
 
   final int dayNumber;
@@ -2752,6 +3105,7 @@ class _CalendarDayCell extends StatelessWidget {
   final DateTime month;
   final DateTime? selectedDate;
   final ValueChanged<DateTime> onDateSelected;
+  final bool Function(DateTime)? hasScheduledEvents;
 
   @override
   Widget build(BuildContext context) {
@@ -2760,9 +3114,12 @@ class _CalendarDayCell extends StatelessWidget {
     }
 
     final date = DateTime(month.year, month.month, dayNumber);
-    final hasBooking = bookings.any(
-      (booking) => isSameDay(booking.startAt, date),
-    );
+    final hasBooking =
+        (hasScheduledEvents?.call(date) ?? false) ||
+        bookings.any(
+          (booking) =>
+              isActiveBooking(booking) && isSameDay(booking.startAt, date),
+        );
     final isSelected = selectedDate != null && isSameDay(selectedDate!, date);
     final isToday = isSameDay(campusNow(), date);
 
@@ -2983,17 +3340,27 @@ class IssueTile extends StatelessWidget {
 }
 
 class AppScrollView extends StatelessWidget {
-  const AppScrollView({required this.children, super.key});
+  const AppScrollView({
+    required this.children,
+    this.itemCount = 0,
+    this.itemBuilder,
+    super.key,
+  });
 
   final List<Widget> children;
+  final int itemCount;
+  final IndexedWidgetBuilder? itemBuilder;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      children: [
-        for (final child in children) ...[child, const SizedBox(height: 14)],
-      ],
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: children.length + itemCount,
+      separatorBuilder: (_, _) => const SizedBox(height: 14),
+      itemBuilder: (context, index) => index < children.length
+          ? children[index]
+          : itemBuilder!(context, index - children.length),
     );
   }
 }

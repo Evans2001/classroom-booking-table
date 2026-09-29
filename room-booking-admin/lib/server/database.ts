@@ -60,10 +60,8 @@ type LecturerIssueSeverity = "LOW" | "MEDIUM" | "HIGH";
 
 interface LecturerRoom {
   id: string;
-  code: string;
+  roomNumber: string;
   name: string;
-  building: string;
-  floor: number;
   capacity: number;
   type: "LECTURE_HALL" | "LAB" | "MEETING_ROOM";
   status: LecturerRoomStatus;
@@ -76,8 +74,7 @@ interface LecturerBooking {
   requesterName: string;
   roomId: string;
   roomName: string;
-  building: string;
-  roomCode: string;
+  roomNumber: string;
   moduleName: string;
   startAt: string;
   endAt: string;
@@ -170,7 +167,7 @@ export interface LecturerAccountRequestInput {
   department: string;
   position: string;
   gmail: string;
-  idNumber: string;
+  idNumber?: string;
 }
 
 export interface LecturerAccountRequest {
@@ -214,11 +211,12 @@ export interface TimetableEntry {
   startTime: string;
   endTime: string;
   moduleCode: string;
-  roomCode: string;
+  roomNumber: string;
+  roomName: string;
   uploadedAt: string;
 }
 
-export type TimetableEntryInput = Omit<TimetableEntry, "id" | "uploadedAt">;
+export type TimetableEntryInput = Omit<TimetableEntry, "id" | "uploadedAt" | "roomName" | "lecturerName"> & { lecturerName?: string };
 
 interface ImportedRow {
   requesterName: string;
@@ -234,6 +232,7 @@ interface ImportedRow {
 
 type RoomRow = {
   id: string;
+  room_number: string;
   code: string;
   name: string;
   building: string;
@@ -316,7 +315,7 @@ type LecturerAccountRow = {
   updated_at: string;
 };
 
-const seededRooms: CreateRoomInput[] = [
+const seededRooms: Array<CreateRoomInput & { code: string; building: string; floor: number }> = [
   {
     code: "LH-101",
     name: "Main Lecture Hall",
@@ -374,7 +373,7 @@ const seededRooms: CreateRoomInput[] = [
   },
 ];
 
-const realFacultyRooms: CreateRoomInput[] = [
+const realFacultyRooms: Array<CreateRoomInput & { code: string; building: string; floor: number }> = [
   { code: "AUDITORIUM", name: "Auditorium", building: "Faculty of Engineering", floor: 0, capacity: 400, type: "LECTURE_HALL", hasProjector: true, hasAc: true, status: "ACTIVE" },
   ...["LT1", "LT2", "NHL1", "NHL2", "NHL3", "NHL4", "LR1", "LR2", "EEC", "ELR", "NCC", "OCC", "DO1", "DO2"].map((code) => ({
     code, name: code, building: "Faculty of Engineering", floor: 0, capacity: 100,
@@ -388,7 +387,7 @@ const seededRequests = [
     requesterName: "Namal Perera",
     requesterEmail: "namal.perera@university.edu",
     department: "Computer Science",
-    roomCode: "LH-101",
+    roomNumber: "LH-101",
     moduleName: "Distributed Systems",
     purpose: "Guest lecture on distributed systems",
     startAt: "2026-03-04T09:00:00.000Z",
@@ -402,7 +401,7 @@ const seededRequests = [
     requesterName: "Samanthi Silva",
     requesterEmail: "samanthi.silva@university.edu",
     department: "Mathematics",
-    roomCode: "LH-101",
+    roomNumber: "LH-101",
     moduleName: "Orientation",
     purpose: "Year 1 orientation",
     startAt: "2026-03-05T10:00:00.000Z",
@@ -419,7 +418,7 @@ const seededRequests = [
     requesterName: "Dilshan Fernando",
     requesterEmail: "dilshan.fernando@university.edu",
     department: "Mechanical Engineering",
-    roomCode: "LAB-204",
+    roomNumber: "LAB-204",
     moduleName: "Embedded Systems",
     purpose: "Embedded systems workshop",
     startAt: "2026-03-05T13:00:00.000Z",
@@ -436,7 +435,7 @@ const seededRequests = [
     requesterName: "Shalini Jayasinghe",
     requesterEmail: "shalini.jayasinghe@university.edu",
     department: "Administration",
-    roomCode: "MR-305",
+    roomNumber: "MR-305",
     moduleName: "Strategy Meeting",
     purpose: "Faculty strategy meeting",
     startAt: "2026-03-06T14:00:00.000Z",
@@ -450,7 +449,7 @@ const seededRequests = [
     requesterName: DEMO_LECTURER_NAME,
     requesterEmail: DEMO_LECTURER_EMAIL,
     department: DEMO_LECTURER_DEPARTMENT,
-    roomCode: "LH-101",
+    roomNumber: "LH-101",
     moduleName: "Software Engineering",
     purpose: "Department seminar",
     startAt: "2026-06-16T03:30:00.000Z",
@@ -464,7 +463,7 @@ const seededRequests = [
     requesterName: DEMO_LECTURER_NAME,
     requesterEmail: DEMO_LECTURER_EMAIL,
     department: DEMO_LECTURER_DEPARTMENT,
-    roomCode: "MR-305",
+    roomNumber: "MR-305",
     moduleName: "Database Systems",
     purpose: "Project discussion",
     startAt: "2026-06-18T08:00:00.000Z",
@@ -481,7 +480,7 @@ const seededRequests = [
     requesterName: DEMO_LECTURER_NAME,
     requesterEmail: DEMO_LECTURER_EMAIL,
     department: DEMO_LECTURER_DEPARTMENT,
-    roomCode: "LAB-204",
+    roomNumber: "LAB-204",
     moduleName: "Web Application Development",
     purpose: "Lab revision session",
     startAt: "2026-06-20T03:00:00.000Z",
@@ -498,7 +497,7 @@ const seededRequests = [
     requesterName: DEMO_LECTURER_NAME,
     requesterEmail: DEMO_LECTURER_EMAIL,
     department: DEMO_LECTURER_DEPARTMENT,
-    roomCode: "LH-101",
+    roomNumber: "LH-101",
     moduleName: "Computer Networks",
     purpose: "Guest lecture",
     startAt: "2026-06-24T04:00:00.000Z",
@@ -515,7 +514,7 @@ const seededRequests = [
 const seededIssues = [
   {
     id: "issue-1",
-    roomCode: "LH-101",
+    roomNumber: "LH-101",
     title: "Projector color distortion",
     description: "Projector output has a strong green tint.",
     severity: "MEDIUM" as const,
@@ -527,7 +526,7 @@ const seededIssues = [
   },
   {
     id: "issue-2",
-    roomCode: "LAB-204",
+    roomNumber: "LAB-204",
     title: "Air conditioning not cooling",
     description: "Room temperature is high during afternoon sessions.",
     severity: "HIGH" as const,
@@ -542,7 +541,7 @@ const seededIssues = [
   },
   {
     id: "issue-3",
-    roomCode: "LH-202",
+    roomNumber: "LH-202",
     title: "Broken chair set",
     description: "Several seats in row 3 are damaged.",
     severity: "LOW" as const,
@@ -558,7 +557,7 @@ const seededIssues = [
   },
   {
     id: "issue-4",
-    roomCode: "LAB-111",
+    roomNumber: "LAB-111",
     title: "Chemical cabinet lock failure",
     description: "Safety cabinet cannot be secured.",
     severity: "CRITICAL" as const,
@@ -569,7 +568,7 @@ const seededIssues = [
   },
   {
     id: "is-1",
-    roomCode: "LAB-204",
+    roomNumber: "LAB-204",
     title: "Projector not turning on",
     description: "Power light blinks but no display.",
     severity: "HIGH" as const,
@@ -584,7 +583,7 @@ const seededIssues = [
   },
   {
     id: "is-2",
-    roomCode: "LH-101",
+    roomNumber: "LH-101",
     title: "Microphone echo issue",
     description: "Audio feedback starts when volume is above medium.",
     severity: "MEDIUM" as const,
@@ -595,7 +594,7 @@ const seededIssues = [
   },
   {
     id: "is-3",
-    roomCode: "MR-305",
+    roomNumber: "MR-305",
     title: "Ceiling light flicker",
     description: "One light panel was flickering during meetings.",
     severity: "LOW" as const,
@@ -615,12 +614,16 @@ declare global {
   var __roomBookingDatabase__: DatabaseSync | undefined;
 }
 
+const initializedConnections = new WeakSet<DatabaseSync>();
+
 export function getDatabase(): DatabaseSync {
+  if (globalThis.__roomBookingDatabase__ && initializedConnections.has(globalThis.__roomBookingDatabase__)) return globalThis.__roomBookingDatabase__;
   if (!globalThis.__roomBookingDatabase__) {
     if (DB_PATH !== ":memory:") {
       mkdirSync(DB_DIRECTORY, { recursive: true });
     }
     const database = new DatabaseSync(DB_PATH);
+    database.exec("PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;");
     database.exec(`
       PRAGMA foreign_keys = ON;
 
@@ -772,8 +775,110 @@ export function getDatabase(): DatabaseSync {
     globalThis.__roomBookingDatabase__ = database;
   }
 
-  ensureSessionTable(globalThis.__roomBookingDatabase__);
-  return globalThis.__roomBookingDatabase__;
+  ensureRoomIds(globalThis.__roomBookingDatabase__);
+  ensureLecturerIds(globalThis.__roomBookingDatabase__);
+  const db = globalThis.__roomBookingDatabase__;
+  if (!db.prepare("SELECT value FROM app_settings WHERE key = 'timetable_lecturer_ids_v1'").get()) {
+    db.exec(`UPDATE timetable_entries SET lecturer_id = (SELECT id_number FROM lecturer_accounts WHERE lower(name) = lower(timetable_entries.lecturer_name))
+      WHERE lecturer_id = '' AND (SELECT COUNT(*) FROM lecturer_accounts WHERE lower(name) = lower(timetable_entries.lecturer_name)) = 1;
+      INSERT OR IGNORE INTO app_settings (key, value) VALUES ('timetable_lecturer_ids_v1', 'true');`);
+  }
+  ensureSessionTable(db);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS booking_room_status_time ON booking_requests(room_id, status, start_at, end_at);
+    CREATE INDEX IF NOT EXISTS booking_requester_submitted ON booking_requests(requester_email, submitted_at DESC);
+    CREATE INDEX IF NOT EXISTS booking_start_at ON booking_requests(start_at);
+    CREATE INDEX IF NOT EXISTS issue_reporter_date ON issues(reporter_email, reported_at DESC);
+    CREATE INDEX IF NOT EXISTS issue_updates_issue_date ON issue_updates(issue_id, at);
+    CREATE INDEX IF NOT EXISTS timetable_lecturer ON timetable_entries(lecturer_id);
+    CREATE INDEX IF NOT EXISTS sessions_account ON lecturer_sessions(lecturer_account_id);
+  `);
+  initializedConnections.add(db);
+  return db;
+}
+
+// A separate sequence survives room deletion and preserves existing booking keys.
+function ensureRoomIds(database: DatabaseSync): void {
+  if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'assign_room_number'").get()) return;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    if (database.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = 'assign_room_number'").get()) {
+      database.exec("COMMIT");
+      return;
+    }
+    database.exec(`
+      ALTER TABLE rooms ADD COLUMN room_number TEXT;
+      CREATE TABLE room_id_registry (
+        number INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_key TEXT NOT NULL UNIQUE
+      );
+      INSERT INTO room_id_registry (room_key) SELECT id FROM rooms ORDER BY created_at, id;
+      UPDATE rooms SET room_number = (
+        SELECT printf('R-%03d', number) FROM room_id_registry WHERE room_key = rooms.id
+      );
+      CREATE UNIQUE INDEX rooms_room_number_unique ON rooms(room_number);
+      CREATE TRIGGER assign_room_number AFTER INSERT ON rooms BEGIN
+        INSERT INTO room_id_registry (room_key) VALUES (NEW.id);
+        UPDATE rooms SET room_number = (
+          SELECT printf('R-%03d', number) FROM room_id_registry WHERE room_key = NEW.id
+        ) WHERE id = NEW.id;
+      END;
+    `);
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+// Issued IDs remain reserved even when an account or request is deleted.
+function allocateLecturerId(database: DatabaseSync, owner: string): string {
+  const row = database.prepare("SELECT COALESCE(MAX(number), 0) AS last FROM lecturer_id_registry").get() as { last: number };
+  if (row.last >= 999) throw new Error("All lecturer IDs from 001 to 999 have been issued. Contact the administrator.");
+  const next = row.last + 1;
+  database.prepare("INSERT INTO lecturer_id_registry (number, owner) VALUES (?, ?)").run(next, owner);
+  return String(next).padStart(3, "0");
+}
+
+function ensureLecturerIds(database: DatabaseSync): void {
+  database.exec(`CREATE TABLE IF NOT EXISTS lecturer_id_registry (
+    number INTEGER PRIMARY KEY CHECK (number BETWEEN 1 AND 999), owner TEXT NOT NULL UNIQUE
+  )`);
+  if (database.prepare("SELECT value FROM app_settings WHERE key = 'lecturer_ids_v1'").get()) return;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    if (database.prepare("SELECT value FROM app_settings WHERE key = 'lecturer_ids_v1'").get()) {
+      database.exec("COMMIT");
+      return;
+    }
+    const accounts = database.prepare("SELECT id, request_id, id_number FROM lecturer_accounts ORDER BY created_at, id").all() as Array<{ id: string; request_id: string | null; id_number: string }>;
+    const requests = database.prepare("SELECT id, id_number FROM lecturer_account_requests ORDER BY submitted_at, id").all() as Array<{ id: string; id_number: string }>;
+    const linked = new Set(accounts.map((account) => account.request_id));
+    const owners = [
+      ...accounts.map((account) => ({ owner: account.request_id || account.id, old: account.id_number, account })),
+      ...requests.filter((request) => !linked.has(request.id)).map((request) => ({ owner: request.id, old: request.id_number, account: undefined })),
+    ];
+    // Retain existing valid numeric IDs before allocating any new ones.
+    for (const item of owners) {
+      if (/^(?!000)[0-9]{3}$/.test(item.old)) {
+        database.prepare("INSERT OR IGNORE INTO lecturer_id_registry (number, owner) VALUES (?, ?)").run(Number(item.old), item.owner);
+      }
+    }
+    for (const item of owners) {
+      const reserved = database.prepare("SELECT number FROM lecturer_id_registry WHERE owner = ?").get(item.owner) as { number: number } | undefined;
+      const assigned = reserved ? String(reserved.number).padStart(3, "0") : allocateLecturerId(database, item.owner);
+      if (item.account) {
+        database.prepare("UPDATE lecturer_accounts SET id_number = ? WHERE id = ?").run(assigned, item.account.id);
+        database.prepare("UPDATE timetable_entries SET lecturer_id = ? WHERE lecturer_id = ? COLLATE NOCASE").run(assigned, item.old);
+      }
+      database.prepare("UPDATE lecturer_account_requests SET id_number = ? WHERE id = ?").run(assigned, item.owner);
+    }
+    database.prepare("INSERT INTO app_settings (key, value) VALUES ('lecturer_ids_v1', 'true')").run();
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function ensureRealFacultyRooms(database: DatabaseSync): void {
@@ -826,7 +931,6 @@ function isSeededDemoLecturerAccount(account: LecturerAccountRow): boolean {
   return (
     account.id === "lecturer-demo" &&
     account.request_id === null &&
-    account.id_number === "DEMO-001" &&
     normalizeEmail(account.gmail) === DEMO_LECTURER_EMAIL
   );
 }
@@ -1062,9 +1166,9 @@ function seedIfNeeded(database: DatabaseSync) {
   `);
 
   for (const item of seededRequests) {
-    const roomId = roomIdsByCode.get(item.roomCode);
+    const roomId = roomIdsByCode.get(item.roomNumber);
     if (!roomId) {
-      throw new Error(`Seed room ${item.roomCode} was not found.`);
+      throw new Error(`Seed room ${item.roomNumber} was not found.`);
     }
     insertRequest.run(
       item.id,
@@ -1095,9 +1199,9 @@ function seedIfNeeded(database: DatabaseSync) {
     INSERT INTO issue_updates (id, issue_id, status, note, at) VALUES (?, ?, ?, ?, ?)
   `);
   for (const issue of seededIssues) {
-    const roomId = roomIdsByCode.get(issue.roomCode);
+    const roomId = roomIdsByCode.get(issue.roomNumber);
     if (!roomId) {
-      throw new Error(`Seed room ${issue.roomCode} was not found.`);
+      throw new Error(`Seed room ${issue.roomNumber} was not found.`);
     }
     insertIssue.run(
       issue.id,
@@ -1122,10 +1226,8 @@ function seedIfNeeded(database: DatabaseSync) {
 function mapRoomRow(row: RoomRow): AdminRoom {
   return {
     id: row.id,
-    code: row.code,
+    roomNumber: row.room_number,
     name: row.name,
-    building: row.building,
-    floor: row.floor,
     capacity: row.capacity,
     type: row.type,
     hasProjector: Boolean(row.has_projector),
@@ -1185,10 +1287,8 @@ function adminRoomToLecturerRoom(room: AdminRoom): LecturerRoom {
 
   return {
     id: room.id,
-    code: room.code,
+    roomNumber: room.roomNumber,
     name: room.name,
-    building: room.building,
-    floor: room.floor,
     capacity: room.capacity,
     type: room.type,
     status,
@@ -1208,8 +1308,7 @@ function mapBookingRowToLecturerBooking(row: BookingRow): LecturerBooking {
     requesterName: row.requester_name,
     roomId: row.room_id,
     roomName: row.room_name,
-    building: row.building,
-    roomCode: row.room_code,
+    roomNumber: row.room_code,
     moduleName: row.module_name ?? "General Booking",
     startAt: row.start_at,
     endAt: row.end_at,
@@ -1300,9 +1399,8 @@ function listBookingRows(whereClause = "", params: SQLInputValue[] = []): Bookin
   const query = `
     SELECT
       b.*,
-      r.code as room_code,
-      r.name as room_name,
-      r.building as building
+      r.room_number as room_code,
+      r.name as room_name
     FROM booking_requests b
     JOIN rooms r ON r.id = b.room_id
     ${whereClause}
@@ -1364,54 +1462,19 @@ function assertValidBookingInput(input: BookingInput) {
 }
 
 function normalizeAdminRoomInput(input: Partial<CreateRoomInput>): CreateRoomInput {
-  const code = typeof input.code === "string" ? input.code.trim() : "";
   const name = typeof input.name === "string" ? input.name.trim() : "";
-  const building = typeof input.building === "string" ? input.building.trim() : "";
-  if (!code || !name || !building) {
-    throw new Error("Room code, name, and building are required.");
-  }
-  if (code.length > 30 || name.length > 120 || building.length > 120) {
-    throw new Error("Room details exceed the maximum supported length.");
-  }
-  if (!Number.isInteger(input.floor) || Number(input.floor) < 0) {
-    throw new Error("Floor must be a non-negative whole number.");
-  }
-  if (!Number.isInteger(input.capacity) || Number(input.capacity) < 1) {
-    throw new Error("Capacity must be a positive whole number.");
-  }
-  if (!ROOM_TYPES.has(input.type as CreateRoomInput["type"])) {
-    throw new Error("Choose a valid room type.");
-  }
-  if (!ROOM_STATUSES.has(input.status as CreateRoomInput["status"])) {
-    throw new Error("Choose a valid room status.");
-  }
-  if (typeof input.hasProjector !== "boolean" || typeof input.hasAc !== "boolean") {
-    throw new Error("Room facilities must be true or false.");
-  }
-
-  return {
-    code,
-    name,
-    building,
-    floor: input.floor as number,
-    capacity: input.capacity as number,
-    type: input.type as CreateRoomInput["type"],
-    hasProjector: input.hasProjector,
-    hasAc: input.hasAc,
-    status: input.status as CreateRoomInput["status"],
-  };
-}
-
-function assertRoomCodeAvailable(database: DatabaseSync, code: string, excludeId?: string): void {
-  const duplicate = database
-    .prepare("SELECT id FROM rooms WHERE lower(code) = lower(?) AND (? IS NULL OR id <> ?)")
-    .get(code, excludeId ?? null, excludeId ?? null) as { id: string } | undefined;
-  if (duplicate) throw new Error(`A room with code ${code} already exists.`);
+  if (!name) throw new Error("Room name is required.");
+  if (name.length > 120) throw new Error("Room name exceeds the maximum supported length.");
+  if (!Number.isInteger(input.capacity) || Number(input.capacity) < 1) throw new Error("Capacity must be a positive whole number.");
+  if (!ROOM_TYPES.has(input.type as CreateRoomInput["type"])) throw new Error("Choose a valid room type.");
+  if (!ROOM_STATUSES.has(input.status as CreateRoomInput["status"])) throw new Error("Choose a valid room status.");
+  if (typeof input.hasProjector !== "boolean" || typeof input.hasAc !== "boolean") throw new Error("Room facilities must be true or false.");
+  return { name, capacity: input.capacity as number, type: input.type as CreateRoomInput["type"],
+    status: input.status as CreateRoomInput["status"], hasProjector: input.hasProjector, hasAc: input.hasAc };
 }
 
 export function listAdminRooms(filters?: RoomFilters): AdminRoom[] {
   const database = getDatabase();
-  ensureRealFacultyRooms(database);
   const rooms = database
     .prepare("SELECT * FROM rooms ORDER BY name ASC")
     .all() as RoomRow[];
@@ -1427,7 +1490,7 @@ export function listAdminRooms(filters?: RoomFilters): AdminRoom[] {
       }
       if (filters?.search) {
         const query = filters.search.toLowerCase();
-        return [room.name, room.code, room.building].some((value) => value.toLowerCase().includes(query));
+        return [room.name, room.roomNumber].some((value) => value.toLowerCase().includes(query));
       }
       return true;
     });
@@ -1441,72 +1504,34 @@ export function getAdminRoomById(id: string): AdminRoom | undefined {
 export function createAdminRoom(input: CreateRoomInput): AdminRoom {
   const database = getDatabase();
   const normalized = normalizeAdminRoomInput(input);
-  assertRoomCodeAvailable(database, normalized.code);
-  const now = new Date().toISOString();
-  const room: AdminRoom = {
-    id: `room-${randomUUID()}`,
-    ...normalized,
-    createdAt: now,
-    updatedAt: now,
-  };
-  database
-    .prepare(
-      `
-        INSERT INTO rooms (
-          id, code, name, building, floor, capacity, type, has_projector, has_ac, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-    )
-    .run(
-      room.id,
-      room.code,
-      room.name,
-      room.building,
-      room.floor,
-      room.capacity,
-      room.type,
-      room.hasProjector ? 1 : 0,
-      room.hasAc ? 1 : 0,
-      room.status,
-      room.createdAt,
-      room.updatedAt,
-    );
-  return room;
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const id = `room-${randomUUID()}`;
+    const now = new Date().toISOString();
+    // Legacy storage columns are retained for existing databases only.
+    database.prepare(`INSERT INTO rooms
+      (id, code, name, building, floor, capacity, type, has_projector, has_ac, status, created_at, updated_at)
+      VALUES (?, ?, ?, '', 0, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, id, normalized.name, normalized.capacity, normalized.type,
+        Number(normalized.hasProjector), Number(normalized.hasAc), normalized.status, now, now);
+    const created = database.prepare("SELECT * FROM rooms WHERE id = ?").get(id) as RoomRow;
+    database.exec("COMMIT");
+    return mapRoomRow(created);
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function updateAdminRoom(id: string, patch: UpdateRoomInput): AdminRoom {
   const current = getAdminRoomById(id);
-  if (!current) {
-    throw new Error("Room not found");
-  }
+  if (!current) throw new Error("Room not found");
   const normalized = normalizeAdminRoomInput({ ...current, ...patch });
-  assertRoomCodeAvailable(getDatabase(), normalized.code, id);
-  const updated: AdminRoom = {
-    ...current,
-    ...normalized,
-    updatedAt: new Date().toISOString(),
-  };
-  getDatabase()
-    .prepare(
-      `
-        UPDATE rooms
-        SET code = ?, name = ?, building = ?, floor = ?, capacity = ?, type = ?, has_projector = ?, has_ac = ?, status = ?, updated_at = ?
-        WHERE id = ?
-      `,
-    )
-    .run(
-      updated.code,
-      updated.name,
-      updated.building,
-      updated.floor,
-      updated.capacity,
-      updated.type,
-      updated.hasProjector ? 1 : 0,
-      updated.hasAc ? 1 : 0,
-      updated.status,
-      updated.updatedAt,
-      id,
-    );
+  const updated = { ...current, ...normalized, updatedAt: new Date().toISOString() };
+  getDatabase().prepare(`UPDATE rooms SET name = ?, capacity = ?, type = ?, has_projector = ?,
+    has_ac = ?, status = ?, updated_at = ? WHERE id = ?`)
+    .run(updated.name, updated.capacity, updated.type, Number(updated.hasProjector),
+      Number(updated.hasAc), updated.status, updated.updatedAt, id);
   return updated;
 }
 
@@ -1534,6 +1559,15 @@ export function listAdminRequests(filters?: RequestFilters): BookingRequest[] {
       }
       return true;
     });
+}
+
+export function listAdminCalendarBookings(month: string): BookingRequest[] {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || Number(month.slice(0, 4)) < 2000 || Number(month.slice(0, 4)) > 2100) throw new Error("Choose a valid calendar month between 2000 and 2100.");
+  const [year, number] = month.split("-").map(Number);
+  const nextMonth = number === 12 ? `${year + 1}-01` : `${year}-${String(number + 1).padStart(2, "0")}`;
+  const start = campusLocalDateTimeToIso(`${month}-01`, "00:00");
+  const end = campusLocalDateTimeToIso(`${nextMonth}-01`, "00:00");
+  return listBookingRows("WHERE b.start_at >= ? AND b.start_at < ? ORDER BY b.start_at, b.id", [start, end]).map(mapBookingRowToAdminRequest);
 }
 
 export function getAdminRequestById(id: string): BookingRequest | undefined {
@@ -1605,27 +1639,35 @@ function minutes(value: string): number {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-function timetableOverlapExists(roomCode: string, startAt: string, endAt: string): boolean {
+function timetableOverlapExists(roomNumber: string, startAt: string, endAt: string): boolean {
   const start = new Date(startAt);
   const end = new Date(endAt);
   const startCampus = getCampusWeekdayAndMinute(start);
   const endCampus = getCampusWeekdayAndMinute(end);
   if (startCampus.weekday !== endCampus.weekday) return true;
   const rows = getDatabase().prepare(
-    "SELECT start_time, end_time FROM timetable_entries WHERE lower(room_code) = lower(?) AND day_of_week = ?",
-  ).all(roomCode, startCampus.weekday) as Array<{ start_time: string; end_time: string }>;
+    "SELECT start_time, end_time FROM timetable_entries WHERE (lower(room_code) = lower(?) OR room_code IN (SELECT code FROM rooms WHERE lower(room_number) = lower(?))) AND day_of_week = ?",
+  ).all(roomNumber, roomNumber, startCampus.weekday) as Array<{ start_time: string; end_time: string }>;
   return rows.some((row) => startCampus.minute < minutes(row.end_time) && minutes(row.start_time) < endCampus.minute);
 }
 
 export function listTimetableEntries(filters?: { department?: string; lecturer?: string }): TimetableEntry[] {
-  const rows = getDatabase().prepare("SELECT * FROM timetable_entries ORDER BY day_of_week, start_time").all() as Array<Record<string, string>>;
+  const rows = getDatabase().prepare(`SELECT t.*,
+    COALESCE(r.room_number, legacy.room_number, t.room_code) AS resolved_room_number,
+    COALESCE(r.name, legacy.name, 'Unavailable room') AS resolved_room_name,
+    COALESCE(l.name, t.lecturer_name) AS resolved_lecturer_name
+    FROM timetable_entries t
+    LEFT JOIN rooms r ON r.room_number = t.room_code
+    LEFT JOIN rooms legacy ON r.id IS NULL AND lower(legacy.code) = lower(t.room_code)
+    LEFT JOIN lecturer_accounts l ON l.id_number = t.lecturer_id
+    ORDER BY day_of_week, start_time`).all() as Array<Record<string, string>>;
   return rows.map((row) => ({
     id: row.id, semester: row.semester, department: row.department, batch: row.batch || row.semester,
-    lecturerName: row.lecturer_name, lecturerId: row.lecturer_id || "", dayOfWeek: row.day_of_week,
+    lecturerName: row.resolved_lecturer_name, lecturerId: row.lecturer_id || "", dayOfWeek: row.day_of_week,
     startTime: row.start_time, endTime: row.end_time, moduleCode: row.module_code,
-    roomCode: row.room_code, uploadedAt: row.uploaded_at,
+    roomNumber: row.resolved_room_number, roomName: row.resolved_room_name, uploadedAt: row.uploaded_at,
   })).filter((entry) => (!filters?.department || entry.department === filters.department)
-    && (!filters?.lecturer || entry.lecturerName === filters.lecturer));
+    && (!filters?.lecturer || entry.lecturerId === filters.lecturer));
 }
 
 export function deleteTimetableEntries(scope: { department: string; batch: string; semester: string }): number {
@@ -1638,27 +1680,43 @@ export function deleteTimetableEntries(scope: { department: string; batch: strin
   return Number(result.changes);
 }
 
+function assertTimetableRoom(roomNumber: string): void {
+  if (!getDatabase().prepare("SELECT id FROM rooms WHERE room_number = ?").get(roomNumber)) {
+    throw new Error(`Unknown room ID ${roomNumber}. Choose an existing R-### room ID.`);
+  }
+}
+
+function timetableLecturerName(lecturerId: string): string {
+  const lecturer = getDatabase().prepare("SELECT name FROM lecturer_accounts WHERE id_number = ?").get(lecturerId) as { name: string } | undefined;
+  if (!/^(?!000)[0-9]{3}$/.test(lecturerId || "") || !lecturer) {
+    throw new Error(`Unknown lecturer ID ${lecturerId || "(missing)"}. Use an assigned lecturer ID from Users.`);
+  }
+  return lecturer.name;
+}
+
 export function updateTimetableEntry(id: string, input: TimetableEntryInput): TimetableEntry {
   const existing = listTimetableEntries().find((entry) => entry.id === id);
   if (!existing) throw new Error("Scheduled lecture not found.");
-  if (!input.department || !input.batch || !input.semester || !input.dayOfWeek || !input.moduleCode || !input.roomCode
+  if (!input.department || !input.batch || !input.semester || !input.dayOfWeek || !input.moduleCode || !input.roomNumber
     || Number.isNaN(minutes(input.startTime)) || Number.isNaN(minutes(input.endTime))
     || minutes(input.endTime) <= minutes(input.startTime)) {
     throw new Error("Enter valid lecture details and ensure the end time is after the start time.");
   }
+  assertTimetableRoom(input.roomNumber);
+  const lecturerName = timetableLecturerName(input.lecturerId);
   const conflict = listTimetableEntries().find((entry) => entry.id !== id
-    && entry.roomCode.toLowerCase() === input.roomCode.toLowerCase()
+    && entry.roomNumber.toLowerCase() === input.roomNumber.toLowerCase()
     && entry.dayOfWeek === input.dayOfWeek
     && minutes(input.startTime) < minutes(entry.endTime)
     && minutes(entry.startTime) < minutes(input.endTime));
   if (conflict) {
-    throw new Error(`${input.roomCode} already has ${conflict.moduleCode} on ${input.dayOfWeek} at ${conflict.startTime}.`);
+    throw new Error(`${input.roomNumber} already has ${conflict.moduleCode} on ${input.dayOfWeek} at ${conflict.startTime}.`);
   }
   getDatabase().prepare(`UPDATE timetable_entries SET
     semester = ?, department = ?, batch = ?, lecturer_name = ?, lecturer_id = ?, day_of_week = ?,
     start_time = ?, end_time = ?, module_code = ?, room_code = ? WHERE id = ?`).run(
-    input.semester, input.department, input.batch, input.lecturerName || "Unassigned", input.lecturerId || "",
-    input.dayOfWeek, input.startTime, input.endTime, input.moduleCode, input.roomCode, id,
+    input.semester, input.department, input.batch, lecturerName, input.lecturerId,
+    input.dayOfWeek, input.startTime, input.endTime, input.moduleCode, input.roomNumber, id,
   );
   return listTimetableEntries().find((entry) => entry.id === id)!;
 }
@@ -1689,15 +1747,17 @@ export function importTimetableEntries(entries: TimetableEntryInput[]): Timetabl
     ).run(scope.department, scope.semester, scope.batch);
 
     for (const entry of entries) {
-      if (!entry.department || !entry.batch || !entry.dayOfWeek || !entry.moduleCode || !entry.roomCode
+      if (!entry.department || !entry.batch || !entry.dayOfWeek || !entry.moduleCode || !entry.roomNumber
         || Number.isNaN(minutes(entry.startTime)) || Number.isNaN(minutes(entry.endTime))
         || minutes(entry.endTime) <= minutes(entry.startTime)) throw new Error("Invalid timetable entry");
-      const conflict = listTimetableEntries().find((existing) => existing.roomCode.toLowerCase() === entry.roomCode.toLowerCase()
+      assertTimetableRoom(entry.roomNumber);
+      const lecturerName = timetableLecturerName(entry.lecturerId);
+      const conflict = listTimetableEntries().find((existing) => existing.roomNumber.toLowerCase() === entry.roomNumber.toLowerCase()
         && existing.dayOfWeek === entry.dayOfWeek && minutes(entry.startTime) < minutes(existing.endTime)
         && minutes(existing.startTime) < minutes(entry.endTime));
-      if (conflict) throw new Error(`${entry.roomCode} already has ${conflict.moduleCode} on ${entry.dayOfWeek} at ${conflict.startTime}`);
-      insert.run(`tt-${randomUUID()}`, entry.semester, entry.department, entry.batch, entry.lecturerName || "Unassigned", entry.lecturerId || "", entry.dayOfWeek,
-        entry.startTime, entry.endTime, entry.moduleCode, entry.roomCode, uploadedAt);
+      if (conflict) throw new Error(`${entry.roomNumber} already has ${conflict.moduleCode} on ${entry.dayOfWeek} at ${conflict.startTime}`);
+      insert.run(`tt-${randomUUID()}`, entry.semester, entry.department, entry.batch, lecturerName, entry.lecturerId, entry.dayOfWeek,
+        entry.startTime, entry.endTime, entry.moduleCode, entry.roomNumber, uploadedAt);
     }
     database.exec("COMMIT");
   } catch (error) { database.exec("ROLLBACK"); throw error; }
@@ -1707,8 +1767,7 @@ export function importTimetableEntries(entries: TimetableEntryInput[]): Timetabl
 export function listLecturerTimetable(identity?: Partial<LecturerIdentity>): TimetableEntry[] {
   const lecturer = resolveLecturerIdentity(identity);
   return listTimetableEntries().filter((entry) =>
-    (entry.lecturerId && entry.lecturerId.toLowerCase() === lecturer.idNumber.toLowerCase())
-    || (!entry.lecturerId && entry.lecturerName.toLowerCase() === lecturer.name.toLowerCase()));
+    entry.lecturerId === lecturer.idNumber);
 }
 
 export function createImportedAdminRequests(rows: ImportedRow[]): BookingRequest[] {
@@ -1862,17 +1921,16 @@ function validateLecturerAccountRequestInput(input: LecturerAccountRequestInput)
     department: input.department?.trim(),
     position: input.position?.trim(),
     gmail: normalizeEmail(input.gmail ?? ""),
-    idNumber: input.idNumber?.trim(),
+
   };
-  if (!normalized.name || !normalized.department || !normalized.position || !normalized.gmail || !normalized.idNumber) {
+  if (!normalized.name || !normalized.department || !normalized.position || !normalized.gmail) {
     throw new Error("Please fill all required lecturer details.");
   }
   if (
     normalized.name.length > 120 ||
     normalized.department.length > 120 ||
     normalized.position.length > 80 ||
-    normalized.gmail.length > 254 ||
-    normalized.idNumber.length > 80
+    normalized.gmail.length > 254
   ) {
     throw new Error("Lecturer account details exceed the maximum supported length.");
   }
@@ -1885,45 +1943,27 @@ function validateLecturerAccountRequestInput(input: LecturerAccountRequestInput)
 export function createLecturerAccountRequest(input: LecturerAccountRequestInput): LecturerAccountRequest {
   const database = getDatabase();
   const normalized = validateLecturerAccountRequestInput(input);
-  const existingAccount = database
-    .prepare("SELECT id FROM lecturer_accounts WHERE gmail = ? OR id_number = ?")
-    .get(normalized.gmail, normalized.idNumber) as { id: string } | undefined;
-  if (existingAccount) {
-    throw new Error("A lecturer account already exists for this Gmail or ID number.");
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    if (database.prepare("SELECT id FROM lecturer_accounts WHERE gmail = ?").get(normalized.gmail)) {
+      throw new Error("A lecturer account already exists for this Gmail.");
+    }
+    if (database.prepare("SELECT id FROM lecturer_account_requests WHERE status = 'PENDING' AND gmail = ?").get(normalized.gmail)) {
+      throw new Error("An account request is already waiting for admin review.");
+    }
+    const id = `acct-req-${randomUUID()}`;
+    const idNumber = allocateLecturerId(database, id);
+    database.prepare(`INSERT INTO lecturer_account_requests
+      (id, name, department, position, gmail, id_number, status, submitted_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)`)
+      .run(id, normalized.name, normalized.department, normalized.position, normalized.gmail, idNumber, new Date().toISOString());
+    const created = database.prepare("SELECT * FROM lecturer_account_requests WHERE id = ?").get(id) as LecturerAccountRequestRow;
+    database.exec("COMMIT");
+    return mapLecturerAccountRequestRow(created);
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
   }
-  const existingPending = database
-    .prepare(
-      "SELECT id FROM lecturer_account_requests WHERE status = 'PENDING' AND (gmail = ? OR id_number = ?)",
-    )
-    .get(normalized.gmail, normalized.idNumber) as { id: string } | undefined;
-  if (existingPending) {
-    throw new Error("An account request is already waiting for admin review.");
-  }
-
-  const id = `acct-req-${randomUUID()}`;
-  const submittedAt = new Date().toISOString();
-  database
-    .prepare(
-      `
-        INSERT INTO lecturer_account_requests (
-          id, name, department, position, gmail, id_number, status, submitted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-    )
-    .run(
-      id,
-      normalized.name,
-      normalized.department,
-      normalized.position,
-      normalized.gmail,
-      normalized.idNumber,
-      "PENDING",
-      submittedAt,
-    );
-  const created = database
-    .prepare("SELECT * FROM lecturer_account_requests WHERE id = ?")
-    .get(id) as LecturerAccountRequestRow;
-  return mapLecturerAccountRequestRow(created);
 }
 
 export function listLecturerAccountRequests(status?: LecturerAccountRequestStatus | "ALL"): LecturerAccountRequest[] {
@@ -2231,7 +2271,7 @@ export function checkLecturerRoomAvailability(input: BookingAvailabilityInput): 
     return { available: false, message };
   }
   if (overlapExists(input.roomId, input.startAt, input.endAt, input.excludeBookingId)
-      || timetableOverlapExists(room.code, input.startAt, input.endAt)) {
+      || timetableOverlapExists(room.roomNumber, input.startAt, input.endAt)) {
     return { available: true, requiresApproval: true, message: "This time overlaps an existing booking or semester lecture. You may submit it for admin approval." };
   }
   return { available: true, message: "Room is available for this period." };

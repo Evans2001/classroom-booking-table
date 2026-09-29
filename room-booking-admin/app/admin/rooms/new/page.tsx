@@ -23,7 +23,7 @@ export default function NewRoomPage() {
     <Card>
       <CardHeader>
         <CardTitle>Create Room</CardTitle>
-        <CardDescription>Add a new room record with location and facilities.</CardDescription>
+        <CardDescription>Add room details and facilities. A unique room ID is assigned automatically.</CardDescription>
       </CardHeader>
       <CardContent>
         <RoomForm onSubmit={handleCreateRoom} submitLabel="Create Room" />

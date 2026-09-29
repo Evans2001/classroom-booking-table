@@ -19,10 +19,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("lecturer booking conflict handling", () => {
   it("keeps an existing approval stable and auto-approves a conflict-free edit", async () => {
     const room = createAdminRoom({
-      code: `TEST-${Date.now()}`,
       name: "Conflict test room",
-      building: "Test building",
-      floor: 1,
       capacity: 20,
       type: "MEETING_ROOM",
       hasProjector: false,
