@@ -51,6 +51,40 @@ describe("admin authentication", () => {
     expect(createAdminSessionCookie(createAdminSession())).toContain("Secure");
   });
 
+  it.each(["localhost:3000", "127.0.0.1:3000", "192.168.8.107:3000"])(
+    "allows timetable removal from requested host %s when bound to all interfaces",
+    (host) => {
+      const response = requireAdminApiAuth(new Request("http://0.0.0.0:3000/api/timetable/upload", {
+        method: "DELETE",
+        headers: {
+          cookie: `${AUTH_COOKIE_NAME}=${createAdminSession()}`,
+          host,
+          origin: `http://${host}`,
+        },
+      }));
+      expect(response).toBeUndefined();
+    },
+  );
+
+  it.each([
+    "https://attacker.example",
+    "http://localhost:3001",
+    "https://localhost:3000",
+    "http://0.0.0.0:3000",
+    "null",
+  ])("rejects a different origin %s despite forwarded headers", (origin) => {
+    const response = requireAdminApiAuth(new Request("http://0.0.0.0:3000/api/timetable/upload", {
+      method: "DELETE",
+      headers: {
+        cookie: `${AUTH_COOKIE_NAME}=${createAdminSession()}`,
+        host: "localhost:3000",
+        origin,
+        "x-forwarded-host": "attacker.example",
+      },
+    }));
+    expect(response?.status).toBe(403);
+  });
+
   it("rejects unauthenticated and cross-origin admin API calls", async () => {
     const unauthenticated = requireAdminApiAuth(new Request("http://localhost/api/admin/rooms"));
     expect(unauthenticated?.status).toBe(401);

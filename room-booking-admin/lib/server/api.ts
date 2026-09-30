@@ -40,7 +40,11 @@ export function requireAdminApiAuth(request: Request): Response | undefined {
 
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) {
     const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin) {
+    const requestUrl = new URL(request.url);
+    // Next.js may use the listen address (0.0.0.0) in request.url.
+    // Host identifies the destination the browser actually requested.
+    requestUrl.host = request.headers.get("host") ?? requestUrl.host;
+    if (origin && origin !== requestUrl.origin) {
       return Response.json(
         { error: "Cross-origin admin requests are not allowed." },
         { status: 403, headers: { "Cache-Control": "no-store" } },
