@@ -1,0 +1,5 @@
+# Replace with the hostname whose DNS points at the VM.
+booking.example.edu {
+    encode gzip
+    reverse_proxy 127.0.0.1:3000
+}
