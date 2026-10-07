@@ -1,0 +1,12 @@
+booking.161.118.220.77.sslip.io {
+    encode gzip
+    handle_path /downloads/* {
+        root * /var/www/room-booking-downloads
+        header X-Content-Type-Options nosniff
+        header Cache-Control "no-cache"
+        file_server
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+}
