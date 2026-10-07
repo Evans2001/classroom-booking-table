@@ -14,6 +14,24 @@ afterEach(() => {
 });
 
 describe("admin authentication", () => {
+  it("accepts the configured HTTPS origin behind a proxy and rejects forged origins", () => {
+    vi.stubEnv("ADMIN_PUBLIC_ORIGIN", "https://booking.example.edu");
+    const headers = {
+      cookie: `${AUTH_COOKIE_NAME}=${createAdminSession()}`,
+      host: "booking.example.edu",
+      "x-forwarded-host": "attacker.example",
+      "x-forwarded-proto": "https",
+    };
+    expect(requireAdminApiAuth(new Request("http://127.0.0.1:3000/api/admin/rooms", {
+      method: "POST", headers: { ...headers, origin: "https://booking.example.edu" },
+    }))).toBeUndefined();
+    for (const origin of ["https://attacker.example", "http://booking.example.edu"]) {
+      expect(requireAdminApiAuth(new Request("http://127.0.0.1:3000/api/admin/rooms", {
+        method: "POST", headers: { ...headers, origin },
+      }))?.status).toBe(403);
+    }
+  });
+
   it("accepts local demo credentials only when both values match", () => {
     expect(validateAdminCredentials(DEMO_ADMIN_EMAIL.toUpperCase(), DEMO_ADMIN_PASSWORD)).toBe(true);
     expect(validateAdminCredentials(DEMO_ADMIN_EMAIL, "wrong-password")).toBe(false);

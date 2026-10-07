@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "960026436000",
-    "project_id": "classroombooking-b9fcc",
-    "storage_bucket": "classroombooking-b9fcc.firebasestorage.app"
+    "project_number": "439379091488",
+    "project_id": "room-booking-f8bc3",
+    "storage_bucket": "room-booking-f8bc3.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:960026436000:android:99d058fbf6f5d7fa4284c5",
+        "mobilesdk_app_id": "1:439379091488:android:a8d30dfbb6d61e8d47dc45",
         "android_client_info": {
-          "package_name": "com.example.room_booking_lecturer"
+          "package_name": "lk.ac.ruh.eng.roombooking.lecturer"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyD3lyQWqHhmFFpTww30FqmBBEhmhFnDdwg"
+          "current_key": "AIzaSyCuuWcDNj5wpNL8SNymTS88NSQfBJjblrY"
         }
       ],
       "services": {

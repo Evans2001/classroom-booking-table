@@ -1,0 +1,7 @@
+*.env
+*.pem
+*.key
+*.sqlite
+*.sqlite-*
+known_hosts
+*.tar.gz
