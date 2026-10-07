@@ -1,0 +1,23 @@
+[Unit]
+Description=Classroom booking admin portal and API
+After=network.target
+
+[Service]
+Type=simple
+User=room-booking
+Group=room-booking
+WorkingDirectory=/opt/room-booking/room-booking-admin
+EnvironmentFile=/etc/room-booking.env
+ExecStart=/usr/local/bin/node /opt/room-booking/room-booking-admin/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3000
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+StateDirectory=room-booking
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=multi-user.target

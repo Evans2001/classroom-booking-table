@@ -44,7 +44,11 @@ export function requireAdminApiAuth(request: Request): Response | undefined {
     // Next.js may use the listen address (0.0.0.0) in request.url.
     // Host identifies the destination the browser actually requested.
     requestUrl.host = request.headers.get("host") ?? requestUrl.host;
-    if (origin && origin !== requestUrl.origin) {
+    // TLS terminates at the reverse proxy, so the backend URL can be HTTP.
+    // Use an explicitly configured public origin rather than trusting forwarded headers.
+    const publicOrigin = process.env.ADMIN_PUBLIC_ORIGIN?.trim();
+    const expectedOrigin = publicOrigin ? new URL(publicOrigin).origin : requestUrl.origin;
+    if (origin && origin !== expectedOrigin) {
       return Response.json(
         { error: "Cross-origin admin requests are not allowed." },
         { status: 403, headers: { "Cache-Control": "no-store" } },
