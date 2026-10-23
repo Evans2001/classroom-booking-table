@@ -13,12 +13,18 @@ export function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { identifier?: unknown; password?: unknown };
+    const body = (await request.json()) as {
+      identifier?: unknown;
+      password?: unknown;
+      persistentSession?: unknown;
+    };
     const identifier = typeof body.identifier === "string" ? body.identifier : "";
     const password = typeof body.password === "string" ? body.password : "";
     const rateLimitKey = requestRateLimitKey(request, "lecturer-login", identifier);
     enforceRateLimit(rateLimitKey, 10, 15 * 60 * 1_000);
-    const account = authenticateLecturerAccount(identifier, password);
+    const account = authenticateLecturerAccount(identifier, password, {
+      persistentSession: body.persistentSession === true,
+    });
     clearRateLimit(rateLimitKey);
     return json(account);
   } catch (error) {
