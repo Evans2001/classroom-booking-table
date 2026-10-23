@@ -902,6 +902,10 @@ function ensureSessionTable(database: DatabaseSync): void {
       FOREIGN KEY (lecturer_account_id) REFERENCES lecturer_accounts(id) ON DELETE CASCADE
     );
   `);
+  const columns = database.prepare("PRAGMA table_info(lecturer_sessions)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "is_persistent")) {
+    database.exec("ALTER TABLE lecturer_sessions ADD COLUMN is_persistent INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function backfillIssueReporterEmails(database: DatabaseSync): void {
@@ -955,15 +959,15 @@ function generateTemporaryPassword(): string {
   return `Lecturer-${randomBytes(4).toString("hex")}`;
 }
 
-function createLecturerSession(database: DatabaseSync, accountId: string): string {
+function createLecturerSession(database: DatabaseSync, accountId: string, persistent: boolean): string {
   const token = randomBytes(32).toString("hex");
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30);
   database
     .prepare(
-      "INSERT INTO lecturer_sessions (token, lecturer_account_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO lecturer_sessions (token, lecturer_account_id, created_at, expires_at, is_persistent) VALUES (?, ?, ?, ?, ?)",
     )
-    .run(token, accountId, now.toISOString(), expiresAt.toISOString());
+    .run(token, accountId, now.toISOString(), expiresAt.toISOString(), Number(persistent));
   return token;
 }
 
@@ -1005,7 +1009,7 @@ function resolveLecturerIdentity(identity?: Partial<LecturerIdentity>): Lecturer
           SELECT a.*
           FROM lecturer_sessions s
           JOIN lecturer_accounts a ON a.id = s.lecturer_account_id
-          WHERE s.token = ? AND s.expires_at > ?
+          WHERE s.token = ? AND (s.is_persistent = 1 OR s.expires_at > ?)
         `,
       )
       .get(sessionToken, new Date().toISOString()) as LecturerAccountRow | undefined;
@@ -2118,12 +2122,16 @@ function lecturerAccountForCredentials(
   return row;
 }
 
-export function authenticateLecturerAccount(identifier: string, password: string): LecturerAccount {
+export function authenticateLecturerAccount(
+  identifier: string,
+  password: string,
+  options: { persistentSession?: boolean } = {},
+): LecturerAccount {
   const database = getDatabase();
   const row = lecturerAccountForCredentials(database, identifier, password);
   return {
     ...mapLecturerAccountRow(row),
-    sessionToken: createLecturerSession(database, row.id),
+    sessionToken: createLecturerSession(database, row.id, options.persistentSession === true),
   };
 }
 
