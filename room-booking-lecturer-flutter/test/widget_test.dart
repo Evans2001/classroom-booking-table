@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:room_booking_lecturer/main.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
@@ -148,6 +149,7 @@ void main() {
   );
 
   testWidgets('shows lecturer login screen', (WidgetTester tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
     await tester.pumpWidget(const LecturerBookingApp());
     await tester.pumpAndSettle();
 

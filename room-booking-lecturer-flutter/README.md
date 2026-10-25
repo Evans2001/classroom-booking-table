@@ -59,4 +59,12 @@ adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-profile.apk
 
 Profile mode supports local HTTP and performance testing; it is not a production-signed release. The tested profile APK is 27,257,587 bytes versus the previous universal debug APK at 164,695,684 bytes (83.4% smaller). This compares build modes and CPU architectures, not equivalent release artifacts. USB forwarding must be restored after reconnecting the phone.
 
-The app reuses HTTP connections, aborts timed-out requests, refreshes after returning to the foreground or receiving a push update, and redirects expired sessions to login. Room rows are built lazily as they become visible.
+The app reuses HTTP connections, aborts timed-out requests, and refreshes after returning to the foreground or receiving a push update. Room rows are built lazily as they become visible.
+
+## Staying signed in
+
+After a successful login, the app saves the session token and profile in platform secure storage, scoped to the configured API server. It restores the login when reopened, including after a phone restart or while offline. Passwords are never saved. Mobile logins request a persistent server session with no inactivity or calendar expiry; web sessions retain their existing 30-day expiry.
+
+Only confirming **Sign out** clears the saved login. Connection failures and API errors preserve it. Signing out clears local storage before returning to the login screen and attempts server revocation when reachable. If the server is offline, its session cannot be revoked at that time. Server access checks still reject deleted accounts and revoked sessions (including other sessions revoked by a password change).
+
+Deploy the updated admin API alongside the updated mobile app. Existing installs need one login in the updated app because previous versions did not save sessions. Clearing app data or uninstalling removes the saved login. Android backup is disabled to keep encrypted credentials tied to the device.
