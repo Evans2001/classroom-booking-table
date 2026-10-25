@@ -6,8 +6,8 @@ const output = path.join(process.cwd(), "sample-timetables");
 const departments = [
   { slug: "electrical-information", code: "EE", name: "Electrical and Information Engineering" },
   { slug: "civil", code: "CE", name: "Civil Engineering" },
-  { slug: "mechanical", code: "ME", name: "Mechanical Engineering" },
-  { slug: "computer-science", code: "CS", name: "Computer Science" },
+  { slug: "mechanical-manufacturing", code: "MME", name: "Mechanical and Manufacturing Engineering" },
+  { slug: "marine-naval-architecture", code: "MNAE", name: "Marine and Naval Architecture" },
 ];
 const database = new DatabaseSync(process.env.ROOM_BOOKING_DB_PATH || path.join(process.cwd(), "data", "room-booking.sqlite"), { readOnly: true });
 const rooms = database.prepare("SELECT room_number FROM rooms WHERE status = 'ACTIVE' ORDER BY room_number").all().map((room) => room.room_number);
