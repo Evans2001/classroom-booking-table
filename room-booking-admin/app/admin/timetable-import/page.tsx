@@ -1,13 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Download } from "lucide-react";
+import Link from "next/link";
 
 import { useToast } from "@/components/common/ToastProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { parseTimetableCell } from "@/lib/utils/timetable-cell";
+import { readTimetableFile, TIMETABLE_HEADERS } from "@/lib/utils/timetable-file";
 import { Label } from "@/components/ui/label";
+import { DEPARTMENTS } from "@/lib/utils/departments";
 
 interface TimetableRecord {
   semester: string;
@@ -26,15 +30,7 @@ interface ImportResult {
   errors: string[];
 }
 
-const EXPECTED_HEADERS = [
-  "Time",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+const EXPECTED_HEADERS = TIMETABLE_HEADERS;
 
 const SEMESTER_OPTIONS = [
   { label: "Select Semester", value: "" },
@@ -50,16 +46,8 @@ const SEMESTER_OPTIONS = [
 
 const DEPARTMENT_OPTIONS = [
   { label: "Select Department", value: "" },
-  { label: "Electrical and Information Engineering", value: "Electrical and Information Engineering" },
-  { label: "Civil Engineering", value: "Civil Engineering" },
-  { label: "Mechanical Engineering", value: "Mechanical Engineering" },
-  { label: "Computer Science", value: "Computer Science" },
+  ...DEPARTMENTS.map(({ name }) => ({ label: name, value: name })),
 ];
-
-function parseCsvLine(line: string): string[] {
-  // Simple CSV line parser ignoring potential quotes inside cells, as this is a simple matrix.
-  return line.split(",").map((value) => value.trim().replace(/^"|"$/g, ''));
-}
 
 export default function TimetableImportPage() {
   const [semester, setSemester] = useState("");
@@ -101,32 +89,29 @@ export default function TimetableImportPage() {
   const handleImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!semester || !department || !batch.trim() || !file) {
-      showToast("Missing information", "Please select a semester and department, enter the batch, and choose a CSV file.", "error");
+      showToast("Missing information", "Please select a semester and department, enter the batch, and choose an Excel or CSV file.", "error");
       return;
     }
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      showToast("Invalid file type", "Only CSV files are supported.", "error");
+    if (!/\.(csv|xlsx?)$/i.test(file.name)) {
+      showToast("Invalid file type", "Choose an Excel (.xls or .xlsx) or CSV (.csv) file.", "error");
       return;
     }
 
     setSubmitting(true);
+    setResult(null);
     try {
-      const raw = await file.text();
-      const lines = raw
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean);
+      const rows = await readTimetableFile(file);
         
-      if (lines.length < 2) {
+      if (rows.length < 2) {
         showToast("Invalid file", "The file must contain headers and at least one data row.", "error");
         return;
       }
 
-      const headers = parseCsvLine(lines[0]);
+      const headers = rows[0];
       const headerMatches = EXPECTED_HEADERS.every((h, i) => headers[i]?.toLowerCase() === h.toLowerCase());
       
       if (!headerMatches) {
-        showToast("Invalid CSV headers", `Expected: ${EXPECTED_HEADERS.join(", ")}`, "error");
+        showToast("Invalid timetable headers", `Expected: ${EXPECTED_HEADERS.join(", ")}`, "error");
         return;
       }
 
@@ -134,8 +119,7 @@ export default function TimetableImportPage() {
       const parsedRecords: TimetableRecord[] = [];
 
       // Iterate through rows
-      lines.slice(1).forEach((line, rowIndex) => {
-        const row = parseCsvLine(line);
+      rows.slice(1).forEach((row, rowIndex) => {
         const timeSlot = row[0];
         
         if (!timeSlot) return; // Skip empty rows
@@ -180,7 +164,7 @@ export default function TimetableImportPage() {
 
       if (parsedRecords.length > 0) {
         if (errors.length) {
-          showToast("Validation failed", "Fix all CSV errors before importing.", "error");
+          showToast("Validation failed", "Fix all timetable errors before importing.", "error");
           return;
         }
         const response = await fetch("/api/timetable/upload", {
@@ -210,14 +194,29 @@ export default function TimetableImportPage() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Timetable CSV Import</CardTitle>
+          <CardTitle>Timetable Import</CardTitle>
           <CardDescription>
-            Upload a weekly timetable matrix CSV. Columns must be: Time, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday.
-            Cells must contain module code/room ID/lecturer ID (e.g. CS6101/R-001/001). Use IDs from Rooms and Users; room and lecturer names are displayed automatically.
-            All three values are required for each occupied cell.
+            Download the Excel template, fill in your weekly schedule, then upload it here. Excel (.xls, .xlsx) and CSV files are supported.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-6">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="font-semibold text-slate-900">Start with the timetable template</h3>
+                <p className="text-sm text-slate-600">Includes Monday–Saturday columns, editable hourly time slots, and a sheet with instructions.</p>
+              </div>
+              <a href="/api/timetable/template" download="timetable-template.xls" className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-[#5E2726] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#7a3332]">
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Download Excel template (.xls)
+              </a>
+            </div>
+            <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+              <li>Fill the first worksheet. Keep the headers and use time slots such as <span className="font-mono">08:00-09:00</span>.</li>
+              <li>Enter <span className="font-mono">module code/room ID/lecturer ID</span> in each occupied cell, for example <span className="font-mono">CS6101/R-001/EIE001</span>. Existing numeric lecturer IDs also work. Leave free periods empty.</li>
+              <li>Copy the actual IDs from <Link href="/admin/rooms" className="font-medium text-[#5E2726] underline">Rooms</Link> and <Link href="/admin/users" className="font-medium text-[#5E2726] underline">Users</Link>, then save and upload your file below.</li>
+            </ol>
+          </div>
           <form className="space-y-5" onSubmit={handleImport}>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -246,13 +245,13 @@ export default function TimetableImportPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="file">CSV File</Label>
+                <Label htmlFor="file">Excel or CSV File</Label>
                 <Input
                   id="file"
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".xls,application/vnd.ms-excel,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,text/csv"
                   className="file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-50 file:text-[#5E2726] hover:file:bg-slate-100 cursor-pointer"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  onChange={(event) => { setFile(event.target.files?.[0] ?? null); setResult(null); }}
                 />
               </div>
             </div>

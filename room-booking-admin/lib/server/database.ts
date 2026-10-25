@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { departmentPrefix, isLecturerId } from "@/lib/utils/departments";
 
 import type {
   CreateRoomInput,
@@ -51,7 +52,7 @@ const DB_PATH = CONFIGURED_DB_PATH === ":memory:"
 const DB_DIRECTORY = path.dirname(DB_PATH);
 const DEMO_LECTURER_NAME = "Demo Lecturer";
 const DEMO_LECTURER_EMAIL = "lecturer@eng.ruh.ac.lk";
-const DEMO_LECTURER_DEPARTMENT = "Computer Science";
+const DEMO_LECTURER_DEPARTMENT = "Electrical and Information Engineering";
 const DEMO_ADMIN_NAME = "System Admin";
 
 type LecturerRoomStatus = "AVAILABLE" | "LIMITED" | "UNAVAILABLE";
@@ -778,6 +779,31 @@ export function getDatabase(): DatabaseSync {
   ensureRoomIds(globalThis.__roomBookingDatabase__);
   ensureLecturerIds(globalThis.__roomBookingDatabase__);
   const db = globalThis.__roomBookingDatabase__;
+  db.exec(`CREATE TABLE IF NOT EXISTS department_lecturer_id_registry (
+    prefix TEXT NOT NULL CHECK (prefix IN ('EIE', 'CE', 'MME', 'MNAE', 'ME', 'CS')),
+    number INTEGER NOT NULL CHECK (number BETWEEN 1 AND 999),
+    owner TEXT NOT NULL UNIQUE,
+    PRIMARY KEY (prefix, number)
+  )`);
+  if (!db.prepare("SELECT value FROM app_settings WHERE key = 'department_prefixes_v2'").get()) {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.exec(`CREATE TABLE department_lecturer_id_registry_v2 (
+        prefix TEXT NOT NULL CHECK (prefix IN ('EIE', 'CE', 'MME', 'MNAE', 'ME', 'CS')),
+        number INTEGER NOT NULL CHECK (number BETWEEN 1 AND 999),
+        owner TEXT NOT NULL UNIQUE,
+        PRIMARY KEY (prefix, number)
+      );
+      INSERT INTO department_lecturer_id_registry_v2 SELECT * FROM department_lecturer_id_registry;
+      DROP TABLE department_lecturer_id_registry;
+      ALTER TABLE department_lecturer_id_registry_v2 RENAME TO department_lecturer_id_registry;
+      INSERT OR IGNORE INTO app_settings (key, value) VALUES ('department_prefixes_v2', 'true');`);
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   if (!db.prepare("SELECT value FROM app_settings WHERE key = 'timetable_lecturer_ids_v1'").get()) {
     db.exec(`UPDATE timetable_entries SET lecturer_id = (SELECT id_number FROM lecturer_accounts WHERE lower(name) = lower(timetable_entries.lecturer_name))
       WHERE lecturer_id = '' AND (SELECT COUNT(*) FROM lecturer_accounts WHERE lower(name) = lower(timetable_entries.lecturer_name)) = 1;
@@ -838,6 +864,15 @@ function allocateLecturerId(database: DatabaseSync, owner: string): string {
   const next = row.last + 1;
   database.prepare("INSERT INTO lecturer_id_registry (number, owner) VALUES (?, ?)").run(next, owner);
   return String(next).padStart(3, "0");
+}
+
+function allocateDepartmentLecturerId(database: DatabaseSync, owner: string, department: string): string {
+  const prefix = departmentPrefix(department);
+  const row = database.prepare("SELECT COALESCE(MAX(number), 0) AS last FROM department_lecturer_id_registry WHERE prefix = ?").get(prefix) as { last: number };
+  if (row.last >= 999) throw new Error(`All lecturer IDs from ${prefix}001 to ${prefix}999 have been issued. Contact the administrator.`);
+  const next = row.last + 1;
+  database.prepare("INSERT INTO department_lecturer_id_registry (prefix, number, owner) VALUES (?, ?, ?)").run(prefix, next, owner);
+  return `${prefix}${String(next).padStart(3, "0")}`;
 }
 
 function ensureLecturerIds(database: DatabaseSync): void {
@@ -1688,7 +1723,7 @@ function assertTimetableRoom(roomNumber: string): void {
 
 function timetableLecturerName(lecturerId: string): string {
   const lecturer = getDatabase().prepare("SELECT name FROM lecturer_accounts WHERE id_number = ?").get(lecturerId) as { name: string } | undefined;
-  if (!/^(?!000)[0-9]{3}$/.test(lecturerId || "") || !lecturer) {
+  if (!isLecturerId(lecturerId || "") || !lecturer) {
     throw new Error(`Unknown lecturer ID ${lecturerId || "(missing)"}. Use an assigned lecturer ID from Users.`);
   }
   return lecturer.name;
@@ -1937,6 +1972,7 @@ function validateLecturerAccountRequestInput(input: LecturerAccountRequestInput)
   if (!/^[^\s@]+@gmail\.com$/i.test(normalized.gmail)) {
     throw new Error("Please enter a valid Gmail address.");
   }
+  departmentPrefix(normalized.department);
   return normalized;
 }
 
@@ -1952,7 +1988,7 @@ export function createLecturerAccountRequest(input: LecturerAccountRequestInput)
       throw new Error("An account request is already waiting for admin review.");
     }
     const id = `acct-req-${randomUUID()}`;
-    const idNumber = allocateLecturerId(database, id);
+    const idNumber = allocateDepartmentLecturerId(database, id, normalized.department);
     database.prepare(`INSERT INTO lecturer_account_requests
       (id, name, department, position, gmail, id_number, status, submitted_at)
       VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)`)

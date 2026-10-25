@@ -20,6 +20,63 @@ Firebase server credentials for room-booking-f8bc3 installed on 2026-10-07;
 service-account authentication verified without sending notifications and backend
 restarted. Actual notification delivery still requires an end-to-end device test.
 
+Excel timetable imports and the authenticated `.xls` template download were
+deployed on 24 October 2026. The live import page and downloaded workbook were
+verified through the public HTTPS hostname; production database integrity passed.
+The service retains `NEXT_DIST_DIR=.next-origin-fix`. Before the switch, the
+database was backed up to
+`/var/lib/room-booking/backups/before-timetable-20261024.sqlite` and the previous
+application was retained at
+`/opt/room-booking/room-booking-admin-before-timetable-20261024`.
+
+## Department registration and Android update
+
+Department registration changes were deployed on 24 October 2026. New accounts
+choose Electrical and Information Engineering (`EIE`), Mechanical and Manufacturing
+Engineering (`MME`), Civil Engineering (`CE`), or Marine and Naval Architecture
+(`MNAE`), with independent ID sequences starting at `001`. The corrected faculty
+list and registry migration were verified live; existing lecturer IDs are unchanged.
+Timetable imports accept both prefixed and legacy numeric lecturer IDs.
+Android release `1.0.2+4` is published at the existing 32-bit and 64-bit download
+URLs. Both APK signatures match the preceding release, their published checksums
+match the local builds, and HTTPS download checks passed. Install the update over
+the existing app to obtain the department selector.
+
+The pre-update database backup is
+`/var/lib/room-booking/backups/before-faculty-20261024.sqlite`;
+the previous app is `/opt/room-booking/room-booking-admin-before-faculty-20261024`.
+Previous APKs are retained under
+`/var/backups/room-booking-apks-before-faculty-20261024`.
+
+## Stay signed in Android update
+
+Android release `1.0.3+5` was published on 24 October 2026 at both existing
+download URLs. Both signatures match the preceding release; published checksums
+match the local builds and HTTPS download checks passed. It adds a
+default-enabled Stay signed in option. The app
+stores only the session token and basic profile in encrypted device storage,
+validates saved sessions with the existing backend on startup, and clears them
+on sign-out or expiry. Server sessions remain valid for up to 30 days. Temporary
+connection failures offer Retry while preserving the saved session. Passwords
+are never saved by this feature. No backend deployment is required.
+
+The preceding APKs are retained under
+`/var/backups/room-booking-apks-before-stay-signed-in-20261024`.
+
+## Current SSH access
+
+SSH access to `room-booking-server-v2` (`161.118.220.77`, Ubuntu 24.04) was
+recovered on 24 October 2026. The replacement private key is stored on this
+Windows computer at `C:\Users\Sanjula\.ssh\room-booking-recovery-20261024`;
+the corresponding public key is installed for the `ubuntu` account.
+
+```powershell
+ssh -i C:/Users/Sanjula/.ssh/room-booking-recovery-20261024 ubuntu@161.118.220.77
+```
+
+Keep a secure backup of that private key outside the repository. The `.pub`
+file alone cannot be used to sign in.
+
 ## 1. Account and VM (user)
 
 Create/sign in to https://www.oracle.com/cloud/free/ and complete verification.

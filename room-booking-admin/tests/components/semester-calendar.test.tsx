@@ -53,6 +53,9 @@ describe("semester calendar room bookings", () => {
     await screen.findAllByRole("button", { name: /^Room booking:/ });
     const departmentSelect = screen.getAllByRole("combobox")[0];
     expect(within(departmentSelect).getAllByRole("option")).toHaveLength(5);
+    expect(within(departmentSelect).getByRole("option", { name: "Mechanical and Manufacturing Engineering" })).toBeInTheDocument();
+    expect(within(departmentSelect).getByRole("option", { name: "Marine and Naval Architecture" })).toBeInTheDocument();
+    expect(within(departmentSelect).queryByRole("option", { name: "Computer Science" })).not.toBeInTheDocument();
     expect(within(departmentSelect).queryByRole("option", { name: /^electrical$/ })).not.toBeInTheDocument();
     fireEvent.change(departmentSelect, { target: { value: "Electrical and Information Engineering" } });
     expect(screen.getAllByRole("button", { name: /^Room booking:/ })).toHaveLength(2);

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseTimetableCell } from "@/lib/utils/timetable-cell";
 describe("timetable CSV identity cells", () => {
+  it.each(["EIE001", "CE002", "MME003", "MNAE004", "ME003", "CS004"])("accepts department ID %s", (lecturerId) => {
+    expect(parseTimetableCell(`CS6101/R-001/${lecturerId}`).lecturerId).toBe(lecturerId);
+  });
+  it.each(["EIE000", "CE000", "XX001", "EIE1"])("rejects invalid department ID %s", (lecturerId) => {
+    expect(() => parseTimetableCell(`CS6101/R-001/${lecturerId}`)).toThrow("lecturer ID");
+  });
   it("parses IDs as strings and keeps lecturer leading zeros", () => {
     expect(parseTimetableCell(" CS-6101 / R-001 / 007 ")).toEqual({ moduleCode: "CS-6101", roomNumber: "R-001", lecturerId: "007" });
   });

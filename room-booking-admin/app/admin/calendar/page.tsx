@@ -16,16 +16,16 @@ const week = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 const departmentColors: Record<string, string> = {
   "Electrical and Information Engineering": "border-blue-400 bg-blue-100 text-blue-950",
   "Civil Engineering": "border-orange-400 bg-orange-100 text-orange-950",
-  "Mechanical Engineering": "border-emerald-400 bg-emerald-100 text-emerald-950",
-  "Computer Science": "border-violet-400 bg-violet-100 text-violet-950",
+  "Mechanical and Manufacturing Engineering": "border-emerald-400 bg-emerald-100 text-emerald-950",
+  "Marine and Naval Architecture": "border-violet-400 bg-violet-100 text-violet-950",
 };
 const departments = Object.keys(departmentColors);
 function canonicalDepartment(value: string): string {
   const name = value.trim().toLowerCase().replace(/\s+/g, " ");
-  if (["civil", "civil engineering"].includes(name)) return "Civil Engineering";
-  if (["mechanical", "mechanical engineering"].includes(name)) return "Mechanical Engineering";
-  if (["electrical", "electrical engineering", "electrical and information", "electrical and information engineering"].includes(name)) return "Electrical and Information Engineering";
-  if (["computer science", "computer", "computer engineering", "computer science and engineering"].includes(name)) return "Computer Science";
+  if (["ce", "civil", "civil engineering"].includes(name)) return "Civil Engineering";
+  if (["mme", "mechanical", "mechanical engineering", "mechanical and manufacturing", "mechanical and manufacturing engineering"].includes(name)) return "Mechanical and Manufacturing Engineering";
+  if (["eie", "electrical", "electrical engineering", "electrical and information", "electrical and information engineering"].includes(name)) return "Electrical and Information Engineering";
+  if (["mnae", "marine", "marine and naval architecture", "marine and naval architecture engineering"].includes(name)) return "Marine and Naval Architecture";
   return value.trim();
 }
 function departmentColor(department: string) {

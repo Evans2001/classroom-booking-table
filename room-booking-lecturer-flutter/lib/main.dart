@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'session_store.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -26,6 +27,12 @@ Future<void> main() async {
 const brandPrimary = Color(0xFF5C2C30);
 const brandAccent = Color(0xFFEAB308);
 const appBg = Color(0xFFF8FAFC);
+const lecturerDepartments = <String, String>{
+  'Electrical and Information Engineering': 'EIE',
+  'Civil Engineering': 'CE',
+  'Mechanical and Manufacturing Engineering': 'MME',
+  'Marine and Naval Architecture': 'MNAE',
+};
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 bool pushNotificationsReady = false;
 bool pushTokenRefreshListenerAttached = false;
@@ -171,7 +178,7 @@ class LecturerBookingApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const LoginScreen(),
+      home: const SessionGate(),
     );
   }
 }
@@ -666,6 +673,136 @@ String currentLecturerId = '';
 String currentLecturerName = 'Lecturer';
 String currentLecturerDepartment = '';
 String currentLecturerSessionToken = '';
+final lecturerSessionStore = LecturerSessionStore(SecureSessionPersistence());
+
+void activateLecturerAccount(Map<String, dynamic> account) {
+  currentLecturerIdentifier = account['gmail'] as String;
+  currentLecturerId = account['idNumber'] as String;
+  currentLecturerName = account['name'] as String;
+  currentLecturerDepartment = account['department'] as String;
+  currentLecturerSessionToken = account['sessionToken'] as String;
+  rooms.clear();
+  bookings.clear();
+  issues.clear();
+}
+
+Future<Map<String, dynamic>?> restoreLecturerSession() =>
+    lecturerSessionStore.restore(apiBaseUrl, (token) async {
+      try {
+        await apiRequest('/api/lecturer/rooms', sessionTokenOverride: token);
+        return true;
+      } on ApiException catch (error) {
+        if (error.statusCode == 401) return false;
+        rethrow;
+      }
+    });
+
+class SessionGate extends StatefulWidget {
+  const SessionGate({super.key, this.restore});
+  final Future<Map<String, dynamic>?> Function()? restore;
+
+  @override
+  State<SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<SessionGate> {
+  late Future<Map<String, dynamic>?> session;
+
+  @override
+  void initState() {
+    super.initState();
+    session = restore();
+  }
+
+  Future<Map<String, dynamic>?> restore() =>
+      (widget.restore ?? restoreLecturerSession)().then((account) {
+        if (account != null && mounted) {
+          activateLecturerAccount(account);
+          unawaited(registerCurrentLecturerPushToken());
+        }
+        return account;
+      });
+
+  Future<void> forgetSession() async {
+    try {
+      await lecturerSessionStore.clear();
+      if (mounted) {
+        setState(() {
+          session = Future.value(null);
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to clear saved sign-in. Please try again.'),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
+    future: session,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState != ConnectionState.done) {
+        return const Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Signing you in…'),
+              ],
+            ),
+          ),
+        );
+      }
+      if (snapshot.hasError) {
+        return Scaffold(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Unable to restore sign-in',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Check your connection and try again.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () => setState(() {
+                        session = restore();
+                      }),
+                      child: const Text('Retry'),
+                    ),
+                    TextButton(
+                      onPressed: forgetSession,
+                      child: const Text('Sign out'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+      return snapshot.data == null ? const LoginScreen() : const LecturerHome();
+    },
+  );
+}
 
 final rooms = <Room>[
   const Room(
@@ -727,6 +864,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   bool signingIn = false;
   bool obscurePassword = true;
+  bool staySignedIn = true;
 
   @override
   void dispose() {
@@ -748,12 +886,18 @@ class _LoginScreenState extends State<LoginScreen> {
         identifier: email,
         password: password,
       );
-      currentLecturerIdentifier = account['gmail'] as String? ?? email;
-      currentLecturerId = account['idNumber'] as String? ?? '';
-      currentLecturerName = account['name'] as String? ?? 'Lecturer';
-      currentLecturerDepartment =
-          account['department'] as String? ?? 'Faculty Department';
-      currentLecturerSessionToken = account['sessionToken'] as String? ?? '';
+      try {
+        await lecturerSessionStore.save(
+          account,
+          apiBaseUrl,
+          remember: staySignedIn,
+        );
+      } catch (_) {
+        throw const ApiException(
+          'Unable to save sign-in on this device. Please try again.',
+        );
+      }
+      activateLecturerAccount(account);
       unawaited(registerCurrentLecturerPushToken());
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -911,6 +1055,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ),
+                            Material(
+                              color: Colors.transparent,
+                              child: CheckboxListTile(
+                                value: staySignedIn,
+                                onChanged: signingIn
+                                    ? null
+                                    : (value) => setState(
+                                        () => staySignedIn = value ?? false,
+                                      ),
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: const Text('Stay signed in'),
+                              ),
+                            ),
                             const SizedBox(height: 16),
                             SizedBox(
                               width: double.infinity,
@@ -984,7 +1143,7 @@ class AccountRequestScreen extends StatefulWidget {
 class _AccountRequestScreenState extends State<AccountRequestScreen> {
   final formKey = GlobalKey<FormState>();
   final nameController = TextEditingController();
-  final departmentController = TextEditingController();
+  String? selectedDepartment;
   final positionController = TextEditingController();
   final gmailController = TextEditingController();
   bool submitting = false;
@@ -992,7 +1151,6 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
   @override
   void dispose() {
     nameController.dispose();
-    departmentController.dispose();
     positionController.dispose();
     gmailController.dispose();
     super.dispose();
@@ -1005,7 +1163,7 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
     try {
       final lecturerId = await submitLecturerAccountRequest(
         name: nameController.text.trim(),
-        department: departmentController.text.trim(),
+        department: selectedDepartment!,
         position: positionController.text.trim(),
         gmail: gmailController.text.trim(),
       );
@@ -1065,18 +1223,38 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: departmentController,
+              DropdownButtonFormField<String>(
+                initialValue: selectedDepartment,
+                isExpanded: true,
                 validator: requiredField,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                inputFormatters: [LengthLimitingTextInputFormatter(120)],
-                enabled: !submitting,
+                hint: const Text('Select department'),
+                items: lecturerDepartments.entries
+                    .map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(
+                          entry.key,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: submitting
+                    ? null
+                    : (value) => setState(() => selectedDepartment = value),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.apartment_outlined),
                   labelText: 'Department',
                 ),
               ),
+              if (selectedDepartment != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Your lecturer ID will be assigned automatically, for example ${lecturerDepartments[selectedDepartment]}001.',
+                  ),
+                ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: positionController,
@@ -1205,6 +1383,7 @@ class _LecturerHomeState extends State<LecturerHome>
   }
 
   Future<void> performRefresh() async {
+    final refreshingSession = currentLecturerSessionToken;
     if (mounted) {
       setState(() => refreshing = true);
     }
@@ -1215,7 +1394,14 @@ class _LecturerHomeState extends State<LecturerHome>
         setState(() {});
       }
     } catch (error) {
+      if (refreshingSession != currentLecturerSessionToken) return;
       if (error is ApiException && error.statusCode == 401 && mounted) {
+        try {
+          await lecturerSessionStore.clear();
+        } catch (_) {
+          /* The server has already invalidated this session. */
+        }
+        if (!mounted) return;
         currentLecturerSessionToken = '';
         currentLecturerIdentifier = '';
         currentLecturerId = '';
@@ -1280,6 +1466,22 @@ class _LecturerHomeState extends State<LecturerHome>
     final sessionToken = currentLecturerSessionToken;
     final pushToken = registeredPushToken;
     setState(() => loggingOut = true);
+    try {
+      await lecturerSessionStore.clear();
+    } catch (_) {
+      if (mounted) {
+        setState(() => loggingOut = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to clear saved sign-in. Please try signing out again.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
     currentLecturerIdentifier = '';
     currentLecturerId = '';
     currentLecturerName = 'Lecturer';
