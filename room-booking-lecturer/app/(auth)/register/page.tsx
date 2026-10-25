@@ -10,6 +10,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { submitAccountRequest } from "@/lib/services/account.service";
 
+const DEPARTMENTS = [
+  { name: "Electrical and Information Engineering", prefix: "EIE" },
+  { name: "Civil Engineering", prefix: "CE" },
+  { name: "Mechanical and Manufacturing Engineering", prefix: "MME" },
+  { name: "Marine and Naval Architecture", prefix: "MNAE" },
+];
+
 export default function RegisterPage() {
   const [form, setForm] = useState({
     name: "",
@@ -69,13 +76,16 @@ export default function RegisterPage() {
           </Field>
 
           <Field icon={<Building2 className="h-5 w-5" />} label="Department">
-            <Input
+            <select
               value={form.department}
               onChange={(event) => update("department", event.target.value)}
-              placeholder="Computer Engineering"
-              maxLength={120}
+              disabled={submitting}
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900"
               required
-            />
+            >
+              <option value="">Select department</option>
+              {DEPARTMENTS.map((department) => <option key={department.prefix} value={department.name}>{department.name}</option>)}
+            </select>
           </Field>
 
           <Field icon={<UserRoundCog className="h-5 w-5" />} label="Position">
@@ -100,7 +110,7 @@ export default function RegisterPage() {
             />
           </Field>
 
-          <p className="text-sm text-slate-600">Your unique lecturer ID is assigned automatically.</p>
+          <p className="text-sm text-slate-600">Your unique lecturer ID is assigned automatically{form.department ? `, for example ${DEPARTMENTS.find((department) => department.name === form.department)?.prefix}001` : " based on your department"}.</p>
 
           <Button type="submit" className="h-14 w-full rounded-2xl text-base" disabled={submitting}>
             {submitting ? "Sending request..." : "Send to admin"}

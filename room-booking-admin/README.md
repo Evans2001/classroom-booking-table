@@ -65,7 +65,17 @@ Do not commit `.env.local`, database files, SMTP secrets, signing keys, or produ
 
 All existing and newly created rooms receive a server-generated `roomNumber`, starting at `R-001`. This ID is shown in room lists, details, and lecturer room selectors. Room IDs identify rooms throughout the apps and timetable imports. Existing booking links remain intact. The persistent sequence never renumbers rooms or reuses an issued ID after deletion. Numbers continue past `R-999` as `R-1000`.
 
-## Timetable CSV identity format
+## Timetable Excel and CSV imports
+
+New lecturer registrations select from Electrical and Information Engineering
+(`EIE001`, `EIE002`, ...), Civil Engineering (`CE001`, ...), Mechanical and
+Manufacturing Engineering (`MME001`, ...), or Marine and Naval Architecture
+(`MNAE001`, ...). Each department has its own
+permanent sequence; rejected or deleted requests do not release their IDs.
+Existing numeric and previously issued prefixed lecturer IDs remain valid.
+Timetable imports accept both formats.
+
+On **Timetable Import**, select **Download Excel template (.xls)**. Fill the first worksheet and save it as `.xls` or `.xlsx`; CSV uploads are also supported. The template includes editable hourly time slots and a separate Instructions worksheet. Only the first worksheet is imported. Leave free periods blank and avoid merged cells.
 
 Keep the `Time,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday` headers. Each occupied cell must use `module code/room ID/lecturer ID`, for example `CS6101/R-001/001`. Copy assigned IDs from the Rooms and Users pages. Unknown IDs are rejected. Names are resolved from the room and lecturer records for display, and renaming either record does not change the association. Run `node scripts/generate-department-timetables.mjs` to generate samples using currently assigned IDs in the local database.
 

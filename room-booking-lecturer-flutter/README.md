@@ -29,6 +29,18 @@ Example release build:
 flutter build appbundle --release --dart-define=API_BASE_URL=https://booking.example.edu
 ```
 
+## Stay signed in
+
+The login screen enables **Stay signed in** by default. A successful login saves
+the session token and basic profile in encrypted device storage, never the
+password. Reopening the app validates that session with the server before opening
+the home screen. Sessions last up to 30 days; expiry or revocation requires login
+again. Connection failures offer Retry without deleting the saved sign-in.
+
+Uncheck the option to keep the next login in memory only. Signing out removes
+the saved session. Android backups are disabled to avoid restoring encrypted
+session data without its device encryption key.
+
 ## Lecturer IDs
 
 The server assigns a unique three-digit lecturer ID (`001` through `999`) when an account request is submitted. It appears in the signup confirmation, lecturer profile, and admin user/request lists. Approval retains the same ID. Existing accounts and requests are migrated automatically, including timetable references to their previous IDs. Internal account keys and sessions remain intact.
