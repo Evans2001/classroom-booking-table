@@ -1,10 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:room_booking_lecturer/main.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  testWidgets('saved sign-in retries after a connection failure', (
+    tester,
+  ) async {
+    var attempts = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SessionGate(
+          restore: () async {
+            attempts++;
+            if (attempts == 1) throw const ApiException('Offline');
+            return null;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Unable to restore sign-in'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(attempts, 2);
+    expect(find.text('Welcome Back'), findsOneWidget);
+  });
+  testWidgets('account request selects from the four departments', (
+    tester,
+  ) async {
+    expect(lecturerDepartments, {
+      'Electrical and Information Engineering': 'EIE',
+      'Civil Engineering': 'CE',
+      'Mechanical and Manufacturing Engineering': 'MME',
+      'Marine and Naval Architecture': 'MNAE',
+    });
+    await tester.pumpWidget(const MaterialApp(home: AccountRequestScreen()));
+    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    for (final department in lecturerDepartments.keys) {
+      expect(find.text(department), findsWidgets);
+    }
+    expect(lecturerDepartments.length, 4);
+    await tester.tap(find.text('Civil Engineering').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('for example CE001'), findsOneWidget);
+  });
   testWidgets('long lists build only visible rows and remain refreshable', (
     tester,
   ) async {
@@ -111,6 +157,18 @@ void main() {
     expect(find.text('Welcome Back'), findsOneWidget);
     expect(find.text('Auto-fill demo credentials'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Stay signed in'));
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isTrue,
+    );
+    await tester.tap(find.text('Stay signed in'));
+    await tester.pump();
+    expect(
+      tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+      isFalse,
+    );
+    await tester.ensureVisible(find.text('Auto-fill demo credentials'));
     await tester.tap(find.text('Auto-fill demo credentials'));
     await tester.pump();
 

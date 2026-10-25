@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'session_store.dart';
 
 import 'session_storage.dart';
 
@@ -28,6 +29,12 @@ Future<void> main() async {
 const brandPrimary = Color(0xFF5C2C30);
 const brandAccent = Color(0xFFEAB308);
 const appBg = Color(0xFFF8FAFC);
+const lecturerDepartments = <String, String>{
+  'Electrical and Information Engineering': 'EIE',
+  'Civil Engineering': 'CE',
+  'Mechanical and Manufacturing Engineering': 'MME',
+  'Marine and Naval Architecture': 'MNAE',
+};
 final scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 bool pushNotificationsReady = false;
 bool pushTokenRefreshListenerAttached = false;
@@ -809,6 +816,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   bool signingIn = false;
   bool obscurePassword = true;
+  bool staySignedIn = true;
 
   @override
   void dispose() {
@@ -988,6 +996,21 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ),
                               ),
                             ),
+                            Material(
+                              color: Colors.transparent,
+                              child: CheckboxListTile(
+                                value: staySignedIn,
+                                onChanged: signingIn
+                                    ? null
+                                    : (value) => setState(
+                                        () => staySignedIn = value ?? false,
+                                      ),
+                                contentPadding: EdgeInsets.zero,
+                                controlAffinity:
+                                    ListTileControlAffinity.leading,
+                                title: const Text('Stay signed in'),
+                              ),
+                            ),
                             const SizedBox(height: 16),
                             SizedBox(
                               width: double.infinity,
@@ -1061,7 +1084,7 @@ class AccountRequestScreen extends StatefulWidget {
 class _AccountRequestScreenState extends State<AccountRequestScreen> {
   final formKey = GlobalKey<FormState>();
   final nameController = TextEditingController();
-  final departmentController = TextEditingController();
+  String? selectedDepartment;
   final positionController = TextEditingController();
   final gmailController = TextEditingController();
   bool submitting = false;
@@ -1069,7 +1092,6 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
   @override
   void dispose() {
     nameController.dispose();
-    departmentController.dispose();
     positionController.dispose();
     gmailController.dispose();
     super.dispose();
@@ -1082,7 +1104,7 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
     try {
       final lecturerId = await submitLecturerAccountRequest(
         name: nameController.text.trim(),
-        department: departmentController.text.trim(),
+        department: selectedDepartment!,
         position: positionController.text.trim(),
         gmail: gmailController.text.trim(),
       );
@@ -1142,18 +1164,38 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: departmentController,
+              DropdownButtonFormField<String>(
+                initialValue: selectedDepartment,
+                isExpanded: true,
                 validator: requiredField,
-                textCapitalization: TextCapitalization.words,
-                textInputAction: TextInputAction.next,
-                inputFormatters: [LengthLimitingTextInputFormatter(120)],
-                enabled: !submitting,
+                hint: const Text('Select department'),
+                items: lecturerDepartments.entries
+                    .map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(
+                          entry.key,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: submitting
+                    ? null
+                    : (value) => setState(() => selectedDepartment = value),
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.apartment_outlined),
                   labelText: 'Department',
                 ),
               ),
+              if (selectedDepartment != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Your lecturer ID will be assigned automatically, for example ${lecturerDepartments[selectedDepartment]}001.',
+                  ),
+                ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: positionController,
@@ -1284,6 +1326,7 @@ class _LecturerHomeState extends State<LecturerHome>
   }
 
   Future<void> performRefresh() async {
+    final refreshingSession = currentLecturerSessionToken;
     if (mounted) {
       setState(() => refreshing = true);
     }
