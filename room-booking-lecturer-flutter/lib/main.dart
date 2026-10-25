@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'session_store.dart';
 
+import 'session_storage.dart';
+
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
@@ -179,6 +181,59 @@ class LecturerBookingApp extends StatelessWidget {
         ),
       ),
       home: const SessionGate(),
+    );
+  }
+}
+
+class SessionGate extends StatefulWidget {
+  const SessionGate({super.key, this.home = const LecturerHome()});
+
+  final Widget home;
+
+  @override
+  State<SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<SessionGate> {
+  late Future<bool> restoration;
+
+  @override
+  void initState() {
+    super.initState();
+    restoration = restoreLecturerSession();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: restoration,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (snapshot.hasError) {
+          // A temporary storage failure must not discard the saved login.
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Unable to open your saved login. Please retry.'),
+                  FilledButton(
+                    onPressed: () => setState(() {
+                      restoration = restoreLecturerSession();
+                    }),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return snapshot.data == true ? widget.home : const LoginScreen();
+      },
     );
   }
 }
@@ -566,7 +621,11 @@ Future<Map<String, dynamic>> loginLecturerAccount({
   final response = await apiRequest(
     '/api/lecturer/auth/login',
     method: 'POST',
-    body: {'identifier': identifier, 'password': password},
+    body: {
+      'identifier': identifier,
+      'password': password,
+      'persistentSession': true,
+    },
   );
   return response as Map<String, dynamic>;
 }
@@ -673,135 +732,28 @@ String currentLecturerId = '';
 String currentLecturerName = 'Lecturer';
 String currentLecturerDepartment = '';
 String currentLecturerSessionToken = '';
-final lecturerSessionStore = LecturerSessionStore(SecureSessionPersistence());
+SessionStorage sessionStorage = SecureSessionStorage(server: apiBaseUrl);
 
-void activateLecturerAccount(Map<String, dynamic> account) {
-  currentLecturerIdentifier = account['gmail'] as String;
-  currentLecturerId = account['idNumber'] as String;
-  currentLecturerName = account['name'] as String;
-  currentLecturerDepartment = account['department'] as String;
-  currentLecturerSessionToken = account['sessionToken'] as String;
-  rooms.clear();
-  bookings.clear();
-  issues.clear();
+void applyLecturerSession(LecturerSession session) {
+  currentLecturerIdentifier = session.identifier;
+  currentLecturerId = session.id;
+  currentLecturerName = session.name;
+  currentLecturerDepartment = session.department;
+  currentLecturerSessionToken = session.token;
 }
 
-Future<Map<String, dynamic>?> restoreLecturerSession() =>
-    lecturerSessionStore.restore(apiBaseUrl, (token) async {
-      try {
-        await apiRequest('/api/lecturer/rooms', sessionTokenOverride: token);
-        return true;
-      } on ApiException catch (error) {
-        if (error.statusCode == 401) return false;
-        rethrow;
-      }
-    });
-
-class SessionGate extends StatefulWidget {
-  const SessionGate({super.key, this.restore});
-  final Future<Map<String, dynamic>?> Function()? restore;
-
-  @override
-  State<SessionGate> createState() => _SessionGateState();
+Future<bool> restoreLecturerSession() async {
+  final session = await sessionStorage.read();
+  if (session == null) return false;
+  applyLecturerSession(session);
+  unawaited(registerCurrentLecturerPushToken());
+  return true;
 }
 
-class _SessionGateState extends State<SessionGate> {
-  late Future<Map<String, dynamic>?> session;
-
-  @override
-  void initState() {
-    super.initState();
-    session = restore();
-  }
-
-  Future<Map<String, dynamic>?> restore() =>
-      (widget.restore ?? restoreLecturerSession)().then((account) {
-        if (account != null && mounted) {
-          activateLecturerAccount(account);
-          unawaited(registerCurrentLecturerPushToken());
-        }
-        return account;
-      });
-
-  Future<void> forgetSession() async {
-    try {
-      await lecturerSessionStore.clear();
-      if (mounted) {
-        setState(() {
-          session = Future.value(null);
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to clear saved sign-in. Please try again.'),
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
-    future: session,
-    builder: (context, snapshot) {
-      if (snapshot.connectionState != ConnectionState.done) {
-        return const Scaffold(
-          body: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Signing you in…'),
-              ],
-            ),
-          ),
-        );
-      }
-      if (snapshot.hasError) {
-        return Scaffold(
-          body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Unable to restore sign-in',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Check your connection and try again.',
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton(
-                      onPressed: () => setState(() {
-                        session = restore();
-                      }),
-                      child: const Text('Retry'),
-                    ),
-                    TextButton(
-                      onPressed: forgetSession,
-                      child: const Text('Sign out'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      }
-      return snapshot.data == null ? const LoginScreen() : const LecturerHome();
-    },
-  );
+Future<void> saveLecturerSession(Map<String, dynamic> account) async {
+  final session = LecturerSession.fromJson(account);
+  await sessionStorage.save(session);
+  applyLecturerSession(session);
 }
 
 final rooms = <Room>[
@@ -886,18 +838,7 @@ class _LoginScreenState extends State<LoginScreen> {
         identifier: email,
         password: password,
       );
-      try {
-        await lecturerSessionStore.save(
-          account,
-          apiBaseUrl,
-          remember: staySignedIn,
-        );
-      } catch (_) {
-        throw const ApiException(
-          'Unable to save sign-in on this device. Please try again.',
-        );
-      }
-      activateLecturerAccount(account);
+      await saveLecturerSession(account);
       unawaited(registerCurrentLecturerPushToken());
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -1311,7 +1252,9 @@ class _AccountRequestScreenState extends State<AccountRequestScreen> {
 }
 
 class LecturerHome extends StatefulWidget {
-  const LecturerHome({super.key});
+  const LecturerHome({super.key, this.dataLoader = loadSharedData});
+
+  final Future<void> Function() dataLoader;
 
   @override
   State<LecturerHome> createState() => _LecturerHomeState();
@@ -1388,40 +1331,13 @@ class _LecturerHomeState extends State<LecturerHome>
       setState(() => refreshing = true);
     }
     try {
-      await loadSharedData();
+      await widget.dataLoader();
       lastRefresh = DateTime.now();
       if (mounted) {
         setState(() {});
       }
     } catch (error) {
-      if (refreshingSession != currentLecturerSessionToken) return;
-      if (error is ApiException && error.statusCode == 401 && mounted) {
-        try {
-          await lecturerSessionStore.clear();
-        } catch (_) {
-          /* The server has already invalidated this session. */
-        }
-        if (!mounted) return;
-        currentLecturerSessionToken = '';
-        currentLecturerIdentifier = '';
-        currentLecturerId = '';
-        currentLecturerName = 'Lecturer';
-        currentLecturerDepartment = '';
-        rooms.clear();
-        bookings.clear();
-        issues.clear();
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (_) => false,
-        );
-        scaffoldMessengerKey.currentState?.showSnackBar(
-          const SnackBar(
-            content: Text('Your session expired. Please sign in again.'),
-          ),
-        );
-        return;
-      }
-      if (mounted) {
+      if (mounted && !loggingOut) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1467,18 +1383,14 @@ class _LecturerHomeState extends State<LecturerHome>
     final pushToken = registeredPushToken;
     setState(() => loggingOut = true);
     try {
-      await lecturerSessionStore.clear();
+      // Finish local deletion before navigating, even when the server is offline.
+      await sessionStorage.clear();
     } catch (_) {
-      if (mounted) {
-        setState(() => loggingOut = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Unable to clear saved sign-in. Please try signing out again.',
-            ),
-          ),
-        );
-      }
+      if (!mounted) return;
+      setState(() => loggingOut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not sign out. Please try again.')),
+      );
       return;
     }
     if (!mounted) return;
