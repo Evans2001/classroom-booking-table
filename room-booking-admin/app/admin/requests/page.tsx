@@ -6,12 +6,15 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { ApproveRejectModal } from "@/components/modals/ApproveRejectModal";
 import { DataTable, type DataColumn } from "@/components/tables/DataTable";
 import { requestsColumns } from "@/components/tables/columns/requests.columns";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/common/ToastProvider";
 import { decideRequest, listRequests } from "@/lib/services/requests.service";
 import type { BookingRequest, RequestStatus } from "@/lib/types/request";
+import { bookingRequestsCsvFilename, bookingRequestsToCsv } from "@/lib/utils/booking-request-export";
 import { REQUEST_STATUS_LABELS } from "@/lib/utils/constants";
+import { Download } from "lucide-react";
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<BookingRequest[]>([]);
@@ -80,17 +83,28 @@ export default function RequestsPage() {
     }
   };
 
+  const handleExport = () => {
+    const blob = new Blob(["\uFEFF", bookingRequestsToCsv(requests)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = bookingRequestsCsvFilename();
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast("Export ready", `${requests.length} booking request${requests.length === 1 ? "" : "s"} exported to CSV.`, "success");
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
         Only time or room collisions require review. Conflict-free lecturer bookings are approved automatically.
       </div>
-      <div className="flex flex-col gap-2 md:flex-row md:max-w-3xl">
+      <div className="flex flex-col gap-2 md:max-w-4xl md:flex-row">
         <Input
           placeholder="Search requester, department, purpose..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          className="border-slate-200 shadow-sm py-2.5 px-4"
+          className="border-slate-200 px-4 py-2.5 shadow-sm"
         />
         <Select
           value={status}
@@ -102,8 +116,17 @@ export default function RequestsPage() {
             { label: REQUEST_STATUS_LABELS.REJECTED, value: "REJECTED" },
             { label: REQUEST_STATUS_LABELS.CANCELLED, value: "CANCELLED" },
           ]}
-          className="border-slate-200 shadow-sm py-2.5 px-4"
+          className="border-slate-200 px-4 py-2.5 shadow-sm"
         />
+        <Button
+          variant="outline"
+          className="shrink-0 gap-2"
+          onClick={handleExport}
+          disabled={loading || requests.length === 0}
+        >
+          <Download className="h-4 w-4" aria-hidden="true" />
+          Export CSV
+        </Button>
       </div>
 
       {loading ? (
