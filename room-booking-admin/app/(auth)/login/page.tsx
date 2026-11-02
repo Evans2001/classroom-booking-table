@@ -64,7 +64,7 @@ export default function LoginPage() {
             <div className="relative mb-10 flex aspect-square w-44 items-center justify-center rounded-[2rem] bg-white p-5 shadow-2xl shadow-black/25 sm:w-52">
               <div className="absolute -right-4 -top-4 h-16 w-16 rounded-2xl border border-[#F3C033]/50 bg-[#F3C033]/20" />
               <Image
-                src="/faculty-logo.svg"
+                src="/faculty-logo.png"
                 alt="Faculty of Engineering University of Ruhuna"
                 width={155}
                 height={200}
