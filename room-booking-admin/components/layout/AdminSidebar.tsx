@@ -44,7 +44,7 @@ export function AdminSidebar({ mobileOpen = false, onClose }: AdminSidebarProps)
             </div>
             <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-md">
               <Image
-                src="/faculty-logo.svg"
+                src="/faculty-logo.png"
                 alt="Faculty of Engineering"
                 width={155}
                 height={200}
